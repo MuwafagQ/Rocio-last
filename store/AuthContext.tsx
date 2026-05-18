@@ -55,6 +55,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const mapFirebaseUserToLocal = async (firebaseUser: FirebaseUser) => {
     let role: 'admin' | 'user' = 'user';
+    let tier: 'standard' | 'subscriber' | 'corporate' | 'mosque' = 'standard';
     let phone = firebaseUser.phoneNumber || '';
     
     // Extract phone from dummy email if needed
@@ -70,12 +71,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (userDoc.exists()) {
         const data = userDoc.data();
         role = data.role || 'user';
+        tier = data.tier || 'standard';
         if (data.phone) phone = data.phone;
       } else {
         // Create user document if it doesn't exist
         const defaultEmail = firebaseUser.email || `${phone}@storedb.com`;
-        const isDefaultAdmin = defaultEmail === 'Muwafaghussain23@gmail.com' && firebaseUser.emailVerified;
-        role = isDefaultAdmin ? 'admin' : 'user';
+        role = 'user';
         
         await setDoc(userDocRef, {
           uid: firebaseUser.uid,
@@ -84,14 +85,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           phone: phone,
           avatarUrl: firebaseUser.photoURL || `https://ui-avatars.com/api/?name=${phone || 'User'}&background=random`,
           role: role
+          // tier is intentionally omitted — set by Admin SDK (n8n) after Odoo sync
         });
       }
     } catch (err) {
       console.error("Error fetching user role:", err);
-      // Fallback to checking email if Firestore fails
-      if (firebaseUser.email === 'Muwafaghussain23@gmail.com' && firebaseUser.emailVerified) {
-        role = 'admin';
-      }
     }
 
     const u: User = {
@@ -100,7 +98,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       email: firebaseUser.email || `${phone}@storedb.com`,
       phone: phone,
       avatarUrl: firebaseUser.photoURL || `https://ui-avatars.com/api/?name=${phone || 'User'}&background=random`,
-      role: role
+      role,
+      tier,
     };
     setUser(u);
   };
@@ -173,7 +172,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       await signInWithEmailAndPassword(auth, email, pass);
     } catch (err: any) {
-      // Intentionally omitting console.error to reduce console noise for expected auth failures
       setIsLoading(false);
       let msg = 'فشل تسجيل الدخول';
       if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
@@ -192,7 +190,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
       
-      // Create user document immediately
       const userDocRef = doc(db, 'users', userCredential.user.uid);
       await setDoc(userDocRef, {
         uid: userCredential.user.uid,
@@ -201,6 +198,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         phone: phone || '',
         avatarUrl: `https://ui-avatars.com/api/?name=${name}&background=random`,
         role: 'user'
+        // tier is intentionally omitted — set by Admin SDK (n8n) after Odoo sync
       });
 
       await callRegisterWebhook(userCredential.user.uid, email, phone || '', name);
