@@ -43,7 +43,9 @@ query ListProducts @auth(level: PUBLIC) {
       id
       size
       uom
+      internalReference
       stock
+      isActive
       tierPrices_on_sku {
         price
         tier {

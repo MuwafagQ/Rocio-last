@@ -23,6 +23,18 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const callRegisterWebhook = async (uid: string, email: string, phone: string, name: string) => {
+  try {
+    await fetch('https://n8n.srv1473225.hstgr.cloud/webhook/register-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ firebase_uid: uid, email, phone, name })
+    });
+  } catch {
+    // Non-fatal: user exists in Firebase, Odoo sync will catch up
+  }
+};
+
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -126,12 +138,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const dummyPassword = `WadiApp@${cleanPhone}`;
 
       try {
-        // Try to sign in
+        // Try to sign in (existing user)
         await signInWithEmailAndPassword(auth, dummyEmail, dummyPassword);
       } catch (signInErr: any) {
-        // If user not found, create it
+        // If user not found, create it and register in Odoo
         if (signInErr.code === 'auth/user-not-found' || signInErr.code === 'auth/invalid-credential') {
-          await createUserWithEmailAndPassword(auth, dummyEmail, dummyPassword);
+          const newCred = await createUserWithEmailAndPassword(auth, dummyEmail, dummyPassword);
+          await callRegisterWebhook(newCred.user.uid, dummyEmail, `0${cleanPhone}`, `0${cleanPhone}`);
         } else {
           throw signInErr;
         }
@@ -189,6 +202,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         avatarUrl: `https://ui-avatars.com/api/?name=${name}&background=random`,
         role: 'user'
       });
+
+      await callRegisterWebhook(userCredential.user.uid, email, phone || '', name);
       
     } catch (err: any) {
       console.error('Error registering with email:', err);
