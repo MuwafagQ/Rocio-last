@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { collection, onSnapshot, getDocs } from 'firebase/firestore';
-import { db } from '../firebase';
+import { listProducts } from '@firebasegen/rocio-mobile-sdk-connector';
 import { Product } from '../types';
 
 interface ProductContextType {
@@ -16,27 +15,60 @@ export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   useEffect(() => {
     let active = true;
-    
-    const unsubscribe = onSnapshot(collection(db, 'products'), (snapshot) => {
+
+    listProducts().then(({ data }) => {
       if (!active) return;
-      const fetchedProducts = snapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          ...data
-        } as Product;
-      }).filter(p => p.nameAr && p.price !== undefined && p.size);
-      setProducts(fetchedProducts);
+
+      const mapped: Product[] = (data?.products ?? [])
+        .filter(p => p.isActive)
+        .flatMap(p =>
+          p.skus_on_product
+            .filter(sku => sku.isActive && sku.stock > 0)
+            .map(sku => {
+              const uomNum = parseInt(sku.uom.replace(/\D/g, ''), 10) || 1;
+              const packagingType: 'CRT' | 'PCS' | 'DUM' =
+                sku.uom.toUpperCase().startsWith('C') ? 'CRT' :
+                sku.uom.toUpperCase() === 'PCS' ? 'PCS' : 'DUM';
+
+              // Use Standard tier price; fall back to first available price
+              const price =
+                sku.tierPrices_on_sku.find(
+                  tp => tp.tier.name.toLowerCase() === 'standard'
+                )?.price ??
+                sku.tierPrices_on_sku[0]?.price ??
+                0;
+
+              return {
+                id: sku.id,
+                nameAr: p.nameAr,
+                nameEn: p.nameEn,
+                price,
+                imageUrl: p.imageUrl ?? '',
+                brand: p.brand.name,
+                brandId: p.brand.id,
+                packagingType,
+                unitVolume: sku.size,
+                unitsPerPackage: uomNum,
+                size: `${sku.size} x ${uomNum}`,
+                internalReference: sku.internalReference,
+                isSubscriptionAvailable: p.isSubscription,
+                sodiumLevel: parseFloat(p.sodiumLevel ?? '0'),
+                phLevel: parseFloat(p.phLevel ?? '7'),
+                rating: 4.5,
+                reviews: 0,
+                isDonation: p.isMosqueDonation,
+              } satisfies Product;
+            })
+        );
+
+      setProducts(mapped);
       setLoading(false);
-    }, (error) => {
-      console.error("Error fetching products from Firestore:", error);
+    }).catch(err => {
+      console.error('DataConnect listProducts failed:', err);
       if (active) setLoading(false);
     });
 
-    return () => { 
-      active = false;
-      unsubscribe();
-    };
+    return () => { active = false; };
   }, []);
 
   return (
