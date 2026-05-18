@@ -1,0 +1,51 @@
+name: Build & Deploy to Firebase Hosting
+
+on:
+  push:
+    branches:
+      - main
+      - claude/review-project-architecture-gHZnc
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Inject Firebase config
+        run: |
+          node -e "
+            const fs = require('fs');
+            const config = {
+              projectId: 'project-0a287015-616b-4f71-bbf',
+              appId: process.env.FIREBASE_APP_ID,
+              apiKey: process.env.FIREBASE_API_KEY,
+              authDomain: 'project-0a287015-616b-4f71-bbf.firebaseapp.com',
+              databaseURL: 'https://project-0a287015-616b-4f71-bbf-default-rtdb.firebaseio.com',
+              firestoreDatabaseId: 'ai-studio-c3a54b30-a4c1-4b07-916e-e5d047d94454',
+              storageBucket: 'project-0a287015-616b-4f71-bbf.appspot.com',
+              messagingSenderId: '599952035637',
+              measurementId: process.env.FIREBASE_MEASUREMENT_ID
+            };
+            fs.writeFileSync('firebase-applet-config.json', JSON.stringify(config, null, 2));
+            console.log('Firebase config injected');
+          "
+        env:
+          FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          FIREBASE_MEASUREMENT_ID: ${{ secrets.FIREBASE_MEASUREMENT_ID }}
+
+      - name: Build
+        run: npm run build
+
+      - name: Deploy to Firebase Hosting
+        run: npx firebase deploy --only hosting --token "${{ secrets.FIREBASE_TOKEN }}" --project project-0a287015-616b-4f71-bbf
