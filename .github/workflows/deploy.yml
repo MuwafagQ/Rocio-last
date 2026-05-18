@@ -6,6 +6,9 @@ on:
       - main
       - claude/review-project-architecture-gHZnc
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -19,7 +22,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install --legacy-peer-deps
 
       - name: Inject Firebase config
         run: |
@@ -37,7 +40,10 @@ jobs:
               measurementId: process.env.FIREBASE_MEASUREMENT_ID
             };
             fs.writeFileSync('firebase-applet-config.json', JSON.stringify(config, null, 2));
-            console.log('Firebase config injected');
+            console.log('Firebase config injected successfully');
+            console.log('projectId:', config.projectId);
+            console.log('appId set:', !!config.appId);
+            console.log('apiKey set:', !!config.apiKey);
           "
         env:
           FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
@@ -48,4 +54,4 @@ jobs:
         run: npm run build
 
       - name: Deploy to Firebase Hosting
-        run: npx firebase deploy --only hosting --token "${{ secrets.FIREBASE_TOKEN }}" --project project-0a287015-616b-4f71-bbf
+        run: npx firebase deploy --only hosting --token "${{ secrets.FIREBASE_TOKEN }}" --project project-0a287015-616b-4f71-bbf --debug 2>&1 | tail -50
