@@ -64,7 +64,9 @@ export interface ListProductsData {
         id: UUIDString;
         size: string;
         uom: string;
+        internalReference: string;
         stock: number;
+        isActive: boolean;
         tierPrices_on_sku: ({
           price: number;
           tier: {
@@ -168,4 +170,3 @@ export const listProductsRef: ListProductsRef;
 
 export function listProducts(options?: ExecuteQueryOptions): QueryPromise<ListProductsData, undefined>;
 export function listProducts(dc: DataConnect, options?: ExecuteQueryOptions): QueryPromise<ListProductsData, undefined>;
-
