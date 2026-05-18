@@ -1,0 +1,81 @@
+# 1. Brands
+type Brand @table {
+  id: UUID! @default(expr: "uuidV4()")
+  name: String!
+  logoUrl: String
+  isActive: Boolean! @default(value: true)
+}
+
+# 2. Base Product
+type Product @table {
+  id: UUID! @default(expr: "uuidV4()")
+  nameAr: String!
+  nameEn: String!
+  brand: Brand!
+  descriptionAr: String
+  imageUrl: String
+  phLevel: String
+  sodiumLevel: String
+  isFeatured: Boolean! @default(value: false)
+  isSubscription: Boolean! @default(value: false)
+  isMosqueDonation: Boolean! @default(value: false)
+  isLowSodium: Boolean! @default(value: false)
+  isActive: Boolean! @default(value: true)
+}
+
+# 3. SKU (variant)
+type Sku @table {
+  id: UUID! @default(expr: "uuidV4()")
+  product: Product!
+  size: String!
+  uom: String!
+  odooVariantId: Int!
+  internalReference: String! # the default_code from Odoo, e.g. NOVA-1.5L-C12
+  stock: Int! @default(value: 0)
+  isActive: Boolean! @default(value: true)
+}
+
+# 4. Tiers
+type Tier @table {
+  id: UUID! @default(expr: "uuidV4()")
+  name: String!
+}
+
+# 5. Tiered Pricing
+type TierPrice @table(key: ["sku", "tier"]) {
+  sku: Sku!
+  tier: Tier!
+  price: Float!
+}
+
+# 6. User
+type User @table(key: "id") {
+  id: String!
+  isCorporate: Boolean! @default(value: false)
+  tier: Tier
+  nameAr: String
+  phone: String
+  odooPartnerId: Int
+  createdAt: Timestamp! @default(expr: "request.time")
+}
+
+# 7. Order
+type Order @table {
+  id: UUID! @default(expr: "uuidV4()")
+  user: User!
+  status: String! @default(expr: "'pending'")
+  totalAmount: Float!
+  odooOrderId: Int
+  paymentId: String
+  deliveryAddress: String
+  createdAt: Timestamp! @default(expr: "request.time")
+}
+
+# 8. Order Items
+type OrderItem @table {
+  id: UUID! @default(expr: "uuidV4()")
+  order: Order!
+  sku: Sku!
+  quantity: Int!
+  priceAtPurchase: Float!
+}

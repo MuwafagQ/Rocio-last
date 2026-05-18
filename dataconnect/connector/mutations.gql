@@ -1,0 +1,8 @@
+# 1. Upsert a User
+mutation UpsertUser($id: String!, $nameAr: String, $phone: String) @auth(level: USER) {
+  user_upsert(data: {
+    id: $id,
+    nameAr: $nameAr,
+    phone: $phone
+  })
+}

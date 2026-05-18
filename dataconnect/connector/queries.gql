@@ -1,0 +1,55 @@
+query GetUser($id: String!) @auth(level: USER) {
+  user(id: $id) {
+    id
+    isCorporate
+    tier {
+      id
+      name
+    }
+    nameAr
+    phone
+  }
+}
+
+query ListBrands @auth(level: PUBLIC) {
+  brands {
+    id
+    name
+    logoUrl
+    isActive
+  }
+}
+
+query ListProducts @auth(level: PUBLIC) {
+  products {
+    id
+    nameAr
+    nameEn
+    descriptionAr
+    imageUrl
+    phLevel
+    sodiumLevel
+    isFeatured
+    isSubscription
+    isMosqueDonation
+    isLowSodium
+    isActive
+    brand {
+      id
+      name
+      logoUrl
+    }
+    skus_on_product {
+      id
+      size
+      uom
+      stock
+      tierPrices_on_sku {
+        price
+        tier {
+          name
+        }
+      }
+    }
+  }
+}

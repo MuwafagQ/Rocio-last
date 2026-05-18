@@ -1,0 +1,1 @@
+node_modules/protobufjs/src/root.js:Root.prototype.fetch = util.fetch;

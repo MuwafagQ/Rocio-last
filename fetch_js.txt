@@ -1,0 +1,2 @@
+node_modules/@protobufjs/fetch/tests/index.js:var fetch = require("..");
+node_modules/protobufjs/src/root.js:Root.prototype.fetch = util.fetch;

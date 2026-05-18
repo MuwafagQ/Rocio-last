@@ -1,0 +1,22 @@
+p)return;l.ep=!0;const c=n(l);fetch(l.href,c)}})();function kv(s)
+ 0):y=null,r.d.C(_,y))},$t.prefetchDNS=function(_){typeof _=="str
+y.integrity:void 0,V=typeof y.fetchPriority=="string"?y.fetchPrio
+ 0,{crossOrigin:w,integrity:N,fetchPriority:V}):E==="script"&&r.d
+(_,{crossOrigin:w,integrity:N,fetchPriority:V,nonce:typeof y.nonc
+.type=="string"?y.type:void 0,fetchPriority:typeof y.fetchPriorit
+y=="string"?y.fetchPriority:void 0,referrerPolicy
+tion zE(t){Zi.D(t),A0("dns-prefetch",t,null)}function BE(t,i){Zi.
+c function Fv(s){return(await fetch(s,{credentials:"include"})).o
+static initialize(e,n,r){this.fetchImpl=e,n&&(this.headersImpl=n)
+&(this.responseImpl=r)}static fetch(){if(this.fetchImpl)return th
+is.fetchImpl;if(typeof self<"u"&&"fetc
+h"in self)return self.fetch;if(typeof globalThis<"u"&&glo
+balThis.fetch)return globalThis.fetch;if(ty
+peof fetch<"u")return fetch;Wi("Could not find fetch impl
+&(y.credentials="include"),n1.fetch()(await s1(s,s.config.apiHost
+&(_.credentials="include"),n1.fetch()(d,_)});return{accessToken:n
+0:n.token;M_!==l&&(M_=l,await fetch(s,{method:l?"POST":"DELETE",h
+gServer: timeout",!1,p)},1e4);fetch(u,{signal:T.signal}).then(F=>
+al};u&&(p.body=u),(this.H||d).fetch(new Request(this.D,p)).then(t
+atch(ie){console.error("Error fetching user role:",ie),q.email===
+!1)},d=>{console.error("Error fetching products:",d),l(!1)});retu

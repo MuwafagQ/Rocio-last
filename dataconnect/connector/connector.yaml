@@ -1,0 +1,5 @@
+connectorId: "rocio-mobile-sdk"
+generate:
+  javascriptSdk:
+    outputDir: "../../src/generated"
+    package: "@firebasegen/rocio-mobile-sdk-connector"
