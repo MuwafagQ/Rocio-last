@@ -27,10 +27,10 @@ const AppContent: React.FC = () => {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedBrand, setSelectedBrand] = useState<BrandInfo | null>(null);
   const [isHiddenRoute, setIsHiddenRoute] = useState(false);
-  
+
   const [showSplash, setShowSplash] = useState(true);
   const [isReady, setIsReady] = useState(false);
-  
+
   const [isGlobalLocationPickerOpen, setIsGlobalLocationPickerOpen] = useState(false);
   const [globalAddress, setGlobalAddress] = useState<string | null>(null);
 
@@ -38,30 +38,14 @@ const AppContent: React.FC = () => {
     if (window.location.pathname === '/admin-secret') {
       setIsHiddenRoute(true);
     }
-    
-    // Check if we have a saved location
+
     const savedLocation = localStorage.getItem('user_location');
-    if (savedLocation) {
-        setGlobalAddress(savedLocation);
-    } else {
-        // If no location saved, we will ask for it after a short delay (e.g. after splash screen)
-    }
+    if (savedLocation) setGlobalAddress(savedLocation);
 
-    const handleNavigateCart = () => {
-      setSelectedProduct(null);
-      setSelectedBrand(null);
-      setCurrentTab(Tab.CART);
-    };
-
-    const handleNavigateHome = () => {
-      setSelectedProduct(null);
-      setSelectedBrand(null);
-      setCurrentTab(Tab.HOME);
-    };
-
+    const handleNavigateCart = () => { setSelectedProduct(null); setSelectedBrand(null); setCurrentTab(Tab.CART); };
+    const handleNavigateHome = () => { setSelectedProduct(null); setSelectedBrand(null); setCurrentTab(Tab.HOME); };
     window.addEventListener('navigate-cart', handleNavigateCart);
     window.addEventListener('navigate-home', handleNavigateHome);
-    
     return () => {
       window.removeEventListener('navigate-cart', handleNavigateCart);
       window.removeEventListener('navigate-home', handleNavigateHome);
@@ -70,68 +54,42 @@ const AppContent: React.FC = () => {
 
   useEffect(() => {
     if (!authLoading && !productsLoading) {
-      // Add a minimum display time for the splash screen
-      const timer = setTimeout(() => {
-        setIsReady(true);
-      }, 1000);
+      const timer = setTimeout(() => setIsReady(true), 1000);
       return () => clearTimeout(timer);
     }
   }, [authLoading, productsLoading]);
-  
+
   useEffect(() => {
-      // Once app is ready and splash screen is gone, check location
-      if (!showSplash && !globalAddress && !isHiddenRoute) {
-          setIsGlobalLocationPickerOpen(true);
-      }
+    if (!showSplash && !globalAddress && !isHiddenRoute) {
+      setIsGlobalLocationPickerOpen(true);
+    }
   }, [showSplash, globalAddress, isHiddenRoute]);
 
   const handleGlobalLocationConfirm = (loc: string) => {
-      setGlobalAddress(loc);
-      localStorage.setItem('user_location', loc);
-      setIsGlobalLocationPickerOpen(false);
-      
-      // If user is logged in, optionally update their default address in the background
-      if (user && user.id) {
-          import('firebase/firestore').then(({ doc, updateDoc }) => {
-              import('./firebase').then(({ db }) => {
-                  updateDoc(doc(db, 'users', user.id), {
-                      default_address: loc
-                  }).catch(console.error);
-              });
-          });
-      }
+    setGlobalAddress(loc);
+    localStorage.setItem('user_location', loc);
+    setIsGlobalLocationPickerOpen(false);
+    if (user?.id) {
+      import('firebase/firestore').then(({ doc, updateDoc }) => {
+        import('./firebase').then(({ db }) => {
+          updateDoc(doc(db, 'users', user.id), { default_address: loc }).catch(console.error);
+        });
+      });
+    }
   };
 
-
-  const handleProductClick = (product: Product) => {
-    setSelectedProduct(product);
-  };
-
-  const handleBrandClick = (brand: BrandInfo) => {
-    setSelectedBrand(brand);
-  };
-
-  const handleGoToCart = () => {
-    setSelectedBrand(null);
-    setSelectedProduct(null);
-    setCurrentTab(Tab.CART);
-  };
+  const handleGoToCart = () => { setSelectedBrand(null); setSelectedProduct(null); setCurrentTab(Tab.CART); };
 
   const renderContent = () => {
     switch (currentTab) {
       case Tab.HOME:
-        return <Home 
-          onGoToCart={() => setCurrentTab(Tab.CART)} 
-          onGoToProfile={() => setCurrentTab(Tab.PROFILE)}
-          onGoToSupport={() => setCurrentTab(Tab.SUPPORT)}
-          onProductClick={handleProductClick} 
-        />;
+        return <Home onGoToCart={() => setCurrentTab(Tab.CART)} onGoToProfile={() => setCurrentTab(Tab.PROFILE)} onGoToSupport={() => setCurrentTab(Tab.SUPPORT)} onProductClick={p => setSelectedProduct(p)} />;
       case Tab.BRANDS:
-        return <Brands onBrandClick={handleBrandClick} onGoToCart={() => setCurrentTab(Tab.CART)} />;
+        return <Brands onBrandClick={b => setSelectedBrand(b)} onGoToCart={() => setCurrentTab(Tab.CART)} />;
       case Tab.COMMUNITY:
-        return <Community onGoToCart={() => setCurrentTab(Tab.CART)} onProductClick={handleProductClick} />;
+        return <Community onGoToCart={() => setCurrentTab(Tab.CART)} onProductClick={p => setSelectedProduct(p)} />;
       case Tab.SUBSCRIPTIONS:
-        return <Subscriptions onGoToCart={() => setCurrentTab(Tab.CART)} onProductClick={handleProductClick} />;
+        return <Subscriptions onGoToCart={() => setCurrentTab(Tab.CART)} onProductClick={p => setSelectedProduct(p)} />;
       case Tab.CART:
         return <Checkout />;
       case Tab.PROFILE:
@@ -139,12 +97,7 @@ const AppContent: React.FC = () => {
       case Tab.SUPPORT:
         return <Support onBack={() => setCurrentTab(Tab.HOME)} />;
       default:
-        return <Home 
-          onGoToCart={() => setCurrentTab(Tab.CART)} 
-          onGoToProfile={() => setCurrentTab(Tab.PROFILE)}
-          onGoToSupport={() => setCurrentTab(Tab.SUPPORT)}
-          onProductClick={handleProductClick} 
-        />;
+        return <Home onGoToCart={() => setCurrentTab(Tab.CART)} onGoToProfile={() => setCurrentTab(Tab.PROFILE)} onGoToSupport={() => setCurrentTab(Tab.SUPPORT)} onProductClick={p => setSelectedProduct(p)} />;
     }
   };
 
@@ -153,63 +106,35 @@ const AppContent: React.FC = () => {
       if (!user) {
         return (
           <div className="min-h-screen bg-gray-50 p-4 pt-12">
-              <h1 className="text-2xl font-bold text-gray-800 mb-6 px-2 text-center">تسجيل الدخول للإدارة</h1>
-              <Login />
+            <h1 className="text-2xl font-bold text-gray-800 mb-6 px-2 text-center">دخول الإدارة</h1>
+            <Login adminMode />
           </div>
         );
       }
-
       if (user.role === 'admin') {
-        return (
-          <main className="h-full overflow-y-auto no-scrollbar">
-            <ERP />
-          </main>
-        );
-      } else {
-        return (
-          <div className="flex flex-col items-center justify-center p-4 text-center h-full">
-            <h1 className="text-2xl font-bold text-red-500 mb-2">غير مصرح</h1>
-            <p className="text-gray-600 mb-6">ليس لديك صلاحية للوصول إلى هذه الصفحة.</p>
-            <button 
-              onClick={() => {
-                window.history.pushState({}, '', '/');
-                setIsHiddenRoute(false);
-              }}
-              className="bg-primary text-white px-6 py-2 rounded-lg font-bold"
-            >
-              العودة للرئيسية
-            </button>
-          </div>
-        );
+        return <main className="h-full overflow-y-auto no-scrollbar"><ERP /></main>;
       }
+      return (
+        <div className="flex flex-col items-center justify-center p-4 text-center h-full">
+          <h1 className="text-2xl font-bold text-red-500 mb-2">غير مصرح</h1>
+          <p className="text-gray-600 mb-6">ليس لديك صلاحية للوصول إلى هذه الصفحة.</p>
+          <button onClick={() => { window.history.pushState({}, '', '/'); setIsHiddenRoute(false); }} className="bg-primary text-white px-6 py-2 rounded-lg font-bold">
+            العودة للرئيسية
+          </button>
+        </div>
+      );
     }
 
     if (selectedProduct) {
-        return (
-          <ProductDetails 
-            product={selectedProduct} 
-            onBack={() => setSelectedProduct(null)} 
-            onGoToCart={handleGoToCart}
-          />
-        );
+      return <ProductDetails product={selectedProduct} onBack={() => setSelectedProduct(null)} onGoToCart={handleGoToCart} />;
     }
-
     if (selectedBrand) {
-        return (
-            <BrandDetails 
-              brand={selectedBrand} 
-              onBack={() => setSelectedBrand(null)} 
-              onProductClick={handleProductClick}
-              onGoToCart={handleGoToCart}
-            />
-        );
+      return <BrandDetails brand={selectedBrand} onBack={() => setSelectedBrand(null)} onProductClick={p => setSelectedProduct(p)} onGoToCart={handleGoToCart} />;
     }
 
     return (
       <>
-        <main className="h-full overflow-y-auto no-scrollbar">
-            {renderContent()}
-        </main>
+        <main className="h-full overflow-y-auto no-scrollbar">{renderContent()}</main>
         <BottomNav currentTab={currentTab} onTabChange={setCurrentTab} />
       </>
     );
@@ -217,39 +142,26 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="max-w-md mx-auto bg-gray-100 min-h-screen relative shadow-2xl overflow-hidden font-sans">
-      {showSplash && (
-        <SplashScreen 
-          isReady={isReady} 
-          onTransitionEnd={() => setShowSplash(false)} 
-        />
-      )}
-      {(!authLoading && !productsLoading) && renderMainContent()}
-      
-      <LocationPicker 
-          isOpen={isGlobalLocationPickerOpen} 
-          onClose={() => {
-              // Only allow close if we actually have an address, or force it?
-              // The requirement: "So the map or permissions to access location pops-up the moment the customer opened the app".
-              // If they close it without setting location, should we allow it? Let's allow it but they might not have a location set.
-              setIsGlobalLocationPickerOpen(false);
-          }} 
-          onConfirm={handleGlobalLocationConfirm} 
-          initialLocation={globalAddress || 'الرياض، المملكة العربية السعودية'}
+      {showSplash && <SplashScreen isReady={isReady} onTransitionEnd={() => setShowSplash(false)} />}
+      {!authLoading && !productsLoading && renderMainContent()}
+      <LocationPicker
+        isOpen={isGlobalLocationPickerOpen}
+        onClose={() => setIsGlobalLocationPickerOpen(false)}
+        onConfirm={handleGlobalLocationConfirm}
+        initialLocation={globalAddress || 'الرياض، المملكة العربية السعودية'}
       />
     </div>
   );
 };
 
-const App: React.FC = () => {
-  return (
-    <AuthProvider>
-      <ProductProvider>
-        <CartProvider>
-          <AppContent />
-        </CartProvider>
-      </ProductProvider>
-    </AuthProvider>
-  );
-};
+const App: React.FC = () => (
+  <AuthProvider>
+    <ProductProvider>
+      <CartProvider>
+        <AppContent />
+      </CartProvider>
+    </ProductProvider>
+  </AuthProvider>
+);
 
 export default App;

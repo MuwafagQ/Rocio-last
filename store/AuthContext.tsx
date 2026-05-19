@@ -1,39 +1,26 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User } from '../types';
 import { auth, db } from '../firebase';
-import { 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword,
-  onAuthStateChanged, 
+import {
+  signInWithEmailAndPassword,
+  signInWithCustomToken,
+  onAuthStateChanged,
   signOut,
   User as FirebaseUser
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  sendOtp: (phone: string) => Promise<void>;
+  sendOtp: (phone: string, name: string) => Promise<void>;
   verifyOtp: (phone: string, code: string) => Promise<void>;
   loginWithEmail: (email: string, pass: string) => Promise<void>;
-  registerWithEmail: (name: string, email: string, pass: string, phone?: string) => Promise<void>;
   logout: () => void;
   error: string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-const callRegisterWebhook = async (uid: string, email: string, phone: string, name: string) => {
-  try {
-    await fetch('https://n8n.srv1473225.hstgr.cloud/webhook/register-user', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ firebase_uid: uid, email, phone, name })
-    });
-  } catch {
-    // Non-fatal: user exists in Firebase, Odoo sync will catch up
-  }
-};
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -49,7 +36,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
       setIsLoading(false);
     });
-
     return () => unsubscribe();
   }, []);
 
@@ -57,65 +43,56 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     let role: 'admin' | 'user' = 'user';
     let tier: 'standard' | 'subscriber' | 'corporate' | 'mosque' = 'standard';
     let phone = firebaseUser.phoneNumber || '';
-    
-    // Extract phone from dummy email if needed
-    if (!phone && firebaseUser.email?.startsWith('phone_')) {
-      phone = firebaseUser.email.replace('phone_', '').replace('@storedb.com', '');
-      phone = `0${phone}`; // Add leading zero back for display
+    let name = firebaseUser.displayName || '';
+
+    // Extract phone for custom-token phone users (uid = phone_05XXXXXXXX)
+    if (!phone && firebaseUser.uid.startsWith('phone_')) {
+      phone = firebaseUser.uid.replace('phone_', '');
     }
-    
+
     try {
       const userDocRef = doc(db, 'users', firebaseUser.uid);
       const userDoc = await getDoc(userDocRef);
-      
       if (userDoc.exists()) {
         const data = userDoc.data();
         role = data.role || 'user';
         tier = data.tier || 'standard';
         if (data.phone) phone = data.phone;
-      } else {
-        // Create user document if it doesn't exist
-        const defaultEmail = firebaseUser.email || `${phone}@storedb.com`;
-        role = 'user';
-        
-        await setDoc(userDocRef, {
-          uid: firebaseUser.uid,
-          name: firebaseUser.displayName || 'عميل المتجر',
-          email: defaultEmail,
-          phone: phone,
-          avatarUrl: firebaseUser.photoURL || `https://ui-avatars.com/api/?name=${phone || 'User'}&background=random`,
-          role: role
-          // tier is intentionally omitted — set by Admin SDK (n8n) after Odoo sync
-        });
+        if (data.name) name = data.name;
       }
+      // Phone-auth users: n8n verify-otp creates the user doc before returning the token
     } catch (err) {
-      console.error("Error fetching user role:", err);
+      console.error('Error fetching user profile:', err);
     }
 
-    const u: User = {
+    setUser({
       id: firebaseUser.uid,
-      name: firebaseUser.displayName || 'عميل المتجر',
-      email: firebaseUser.email || `${phone}@storedb.com`,
-      phone: phone,
-      avatarUrl: firebaseUser.photoURL || `https://ui-avatars.com/api/?name=${phone || 'User'}&background=random`,
+      name: name || 'عميل المتجر',
+      email: firebaseUser.email || `${firebaseUser.uid}@rocio.app`,
+      phone,
+      avatarUrl:
+        firebaseUser.photoURL ||
+        `https://ui-avatars.com/api/?name=${encodeURIComponent(name || phone || 'User')}&background=random`,
       role,
       tier,
-    };
-    setUser(u);
+    });
   };
 
-  const sendOtp = async (phone: string) => {
+  const sendOtp = async (phone: string, name: string) => {
     setIsLoading(true);
     setError(null);
     try {
-      // Simulate network delay for sending OTP
-      await new Promise(resolve => setTimeout(resolve, 800));
-      // We don't actually send an SMS to save costs and avoid delivery issues in prototype
-      setIsLoading(false);
-    } catch (err: any) {
-      console.error('Error sending OTP:', err);
-      setIsLoading(false);
+      const res = await fetch('https://n8n.srv1473225.hstgr.cloud/webhook/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, name }),
+      });
+      if (!res.ok) throw new Error('send-otp-failed');
+    } catch {
       setError('حدث خطأ أثناء إرسال الرمز، يرجى المحاولة مرة أخرى');
+      throw new Error('send-otp-failed');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -123,46 +100,31 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setIsLoading(true);
     setError(null);
     try {
-      if (code !== '123456') {
-        throw new Error('auth/invalid-verification-code');
+      const res = await fetch('https://n8n.srv1473225.hstgr.cloud/webhook/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, code }),
+      });
+      let data: any = {};
+      try { data = await res.json(); } catch {}
+
+      if (!data.success || !data.token) {
+        const msg =
+          data.message === 'expired'
+            ? 'انتهت صلاحية الرمز، اطلب رمزاً جديداً'
+            : data.message === 'too_many_attempts'
+            ? 'تجاوزت عدد المحاولات، اطلب رمزاً جديداً'
+            : 'رمز التحقق غير صحيح';
+        setError(msg);
+        setIsLoading(false);
+        return;
       }
 
-      // Format phone to ensure consistency (e.g., 5XXXXXXXX)
-      let cleanPhone = phone.replace(/\D/g, '');
-      if (cleanPhone.startsWith('0')) {
-        cleanPhone = cleanPhone.substring(1);
-      }
-
-      const dummyEmail = `phone_${cleanPhone}@storedb.com`;
-      const dummyPassword = `WadiApp@${cleanPhone}`;
-
-      try {
-        // Try to sign in (existing user)
-        await signInWithEmailAndPassword(auth, dummyEmail, dummyPassword);
-      } catch (signInErr: any) {
-        // If user not found, create it and register in Odoo
-        if (signInErr.code === 'auth/user-not-found' || signInErr.code === 'auth/invalid-credential') {
-          const newCred = await createUserWithEmailAndPassword(auth, dummyEmail, dummyPassword);
-          await callRegisterWebhook(newCred.user.uid, dummyEmail, `0${cleanPhone}`, `0${cleanPhone}`);
-        } else {
-          throw signInErr;
-        }
-      }
-      
-      // onAuthStateChanged will handle the rest
-    } catch (err: any) {
-      console.error('Error verifying OTP:', err);
+      await signInWithCustomToken(auth, data.token);
+      // onAuthStateChanged fires next and calls mapFirebaseUserToLocal
+    } catch {
+      setError('فشل التحقق، يرجى المحاولة مرة أخرى';
       setIsLoading(false);
-      
-      let msg = 'فشل التحقق، يرجى المحاولة مرة أخرى';
-      if (err.message === 'auth/invalid-verification-code' || err.code === 'auth/invalid-verification-code') {
-        msg = 'رمز التحقق غير صحيح (استخدم 123456)';
-      } else if (err.code === 'auth/network-request-failed') {
-        msg = 'تأكد من اتصالك بالإنترنت';
-      }
-      
-      setError(msg);
-      throw err; // Re-throw to allow component to handle if needed
     }
   };
 
@@ -173,47 +135,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       await signInWithEmailAndPassword(auth, email, pass);
     } catch (err: any) {
       setIsLoading(false);
-      let msg = 'فشل تسجيل الدخول';
-      if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
-        msg = 'البريد الإلكتروني أو كلمة المرور غير صحيحة';
-      } else if (err.code === 'auth/invalid-email') {
-        msg = 'البريد الإلكتروني غير صالح';
-      }
-      setError(msg);
-      throw err;
-    }
-  };
-
-  const registerWithEmail = async (name: string, email: string, pass: string, phone?: string) => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
-      
-      const userDocRef = doc(db, 'users', userCredential.user.uid);
-      await setDoc(userDocRef, {
-        uid: userCredential.user.uid,
-        name: name,
-        email: email,
-        phone: phone || '',
-        avatarUrl: `https://ui-avatars.com/api/?name=${name}&background=random`,
-        role: 'user'
-        // tier is intentionally omitted — set by Admin SDK (n8n) after Odoo sync
-      });
-
-      await callRegisterWebhook(userCredential.user.uid, email, phone || '', name);
-      
-    } catch (err: any) {
-      console.error('Error registering with email:', err);
-      setIsLoading(false);
-      let msg = 'فشل إنشاء الحساب';
-      if (err.code === 'auth/email-already-in-use') {
-        msg = 'البريد الإلكتروني مستخدم مسبقاً';
-      } else if (err.code === 'auth/weak-password') {
-        msg = 'كلمة المرور ضعيفة جداً';
-      } else if (err.code === 'auth/invalid-email') {
-        msg = 'البريد الإلكتروني غير صالح';
-      }
+      const msg =
+        err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential'
+          ? 'البريد الإلكتروني أو كلمة المرور غير صحيحة'
+          : err.code === 'auth/invalid-email'
+          ? 'البريد الإلكتروني غير صالح'
+          : 'فشل تسجيل الدخول';
       setError(msg);
       throw err;
     }
@@ -229,7 +156,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, sendOtp, verifyOtp, loginWithEmail, registerWithEmail, logout, error }}>
+    <AuthContext.Provider value={{ user, isLoading, sendOtp, verifyOtp, loginWithEmail, logout, error }}>
       {children}
     </AuthContext.Provider>
   );
