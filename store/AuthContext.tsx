@@ -22,6 +22,18 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const callRegisterWebhook = async (uid: string, email: string, phone: string, name: string) => {
+  try {
+    await fetch('https://n8n.srv1473225.hstgr.cloud/webhook/register-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ firebase_uid: uid, email, phone, name })
+    });
+  } catch {
+    // Non-fatal: user exists in Firebase, Odoo sync will catch up
+  }
+};
+
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -121,9 +133,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
 
       await signInWithCustomToken(auth, data.token);
+
+      // Register with Odoo + DataConnect; n8n upserts so safe to call on every login
+      if (auth.currentUser) {
+        const uid = auth.currentUser.uid;
+        const cleanPhone = phone.replace(/\D/g, '');
+        await callRegisterWebhook(
+          uid,
+          `${cleanPhone}@rocio.app`,
+          phone,
+          phone
+        );
+      }
       // onAuthStateChanged fires next and calls mapFirebaseUserToLocal
     } catch {
-      setError('فشل التحقق، يرجى المحاولة مرة أخرى';
+      setError('فشل التحقق، يرجى المحاولة مرة أخرى');
       setIsLoading(false);
     }
   };
