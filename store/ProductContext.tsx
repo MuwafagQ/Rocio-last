@@ -45,7 +45,7 @@ export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ child
       .filter(p => p.isActive)
       .flatMap(p =>
         p.skus_on_product
-          .filter(sku => sku.isActive && sku.stock > 0 && sku.internalReference)
+          .filter(sku => sku.isActive && sku.stock > 0)
           .map(sku => {
             const uomNum = parseInt(sku.uom.replace(/\D/g, ''), 10) || 1;
             const packagingType: 'CRT' | 'PCS' | 'DUM' =
