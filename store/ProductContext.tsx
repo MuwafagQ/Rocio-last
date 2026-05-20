@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { listProducts } from '@firebasegen/rocio-mobile-sdk-connector';
+import { dataConnect } from '../firebase';
 import { useAuth } from './AuthContext';
 import { Product } from '../types';
 
@@ -8,82 +9,115 @@ type TierName = 'standard' | 'subscriber' | 'corporate' | 'mosque';
 interface ProductContextType {
   products: Product[];
   loading: boolean;
+  error: string | null;
 }
 
-const ProductContext = createContext<ProductContextType>({ products: [], loading: true });
+const ProductContext = createContext<ProductContextType>({
+  products: [],
+  loading: true,
+  error: null,
+});
+
+const BRAND_ID_MAP: Record<string, string> = {
+  'Nova': 'nova',
+  'Berain': 'berain',
+  'Safa': 'safa',
+  'OB': 'ob',
+  'Rest': 'rest',
+  'Tania': 'tania',
+  'Zamzam': 'zamzam',
+  'Arwa': 'arwa',
+  'Aquafina': 'aquafina',
+};
+
+// Parse internal_reference like "NOVA-1.5L-C12" → packaging metadata
+function parseInternalReference(ref: string): {
+  unitVolume: string;
+  packagingType: 'CRT' | 'PCS' | 'DUM';
+  unitsPerPackage: number;
+} {
+  const match = ref.match(/^[A-Z]+-([0-9.]+(?:ML|L|ml|l))-([CDP])(\d+)?$/i);
+  if (!match) {
+    return { unitVolume: '', packagingType: 'PCS', unitsPerPackage: 1 };
+  }
+  const [, sizeStr, packCode, countStr] = match;
+  const packTypeMap: Record<string, 'CRT' | 'PCS' | 'DUM'> = { C: 'CRT', P: 'PCS', D: 'DUM' };
+  return {
+    unitVolume: sizeStr.replace(/ml$/i, 'ml').replace(/(\d)l$/i, '$1L'),
+    packagingType: packTypeMap[packCode.toUpperCase()] ?? 'PCS',
+    unitsPerPackage: countStr ? parseInt(countStr, 10) : 1,
+  };
+}
 
 export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
-
-  // Raw DataConnect payload — fetched once, never re-fetched when tier changes
-  const [rawData, setRawData] = useState<Awaited<ReturnType<typeof listProducts>>['data'] | null>(null);
+  const [rawData, setRawData] = useState<{ products: typeof [] } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
-    listProducts()
-      .then(({ data }) => {
+    (async () => {
+      try {
+        const { data } = await listProducts(dataConnect);
         if (active) {
-          setRawData(data);
+          setRawData(data as any);
           setLoading(false);
         }
-      })
-      .catch(err => {
-        console.error('DataConnect listProducts failed:', err);
-        if (active) setLoading(false);
-      });
+      } catch (e) {
+        console.error('DataConnect listProducts failed:', e);
+        if (active) {
+          setError((e as Error).message);
+          setLoading(false);
+        }
+      }
+    })();
     return () => { active = false; };
   }, []);
 
-  // Tier is read from Firestore (written only by Admin SDK via n8n after Odoo verification).
-  // Defaults to 'standard' while auth is loading or for unauthenticated users.
   const tier: TierName = (user?.tier ?? 'standard') as TierName;
 
   const products = useMemo<Product[]>(() => {
     if (!rawData) return [];
-    return (rawData.products ?? [])
-      .filter(p => p.isActive)
-      .flatMap(p =>
-        p.skus_on_product
-          .filter(sku => sku.isActive && sku.stock > 0)
-          .map(sku => {
-            const uomNum = parseInt(sku.uom.replace(/\D/g, ''), 10) || 1;
-            const packagingType: 'CRT' | 'PCS' | 'DUM' =
-              sku.uom.toUpperCase().startsWith('C') ? 'CRT' :
-              sku.uom.toUpperCase() === 'PCS' ? 'PCS' : 'DUM';
-
-            // Pick user's tier price; fall back to standard, then first available
-            const price =
-              sku.tierPrices_on_sku.find(tp => tp.tier.name.toLowerCase() === tier)?.price ??
-              sku.tierPrices_on_sku.find(tp => tp.tier.name.toLowerCase() === 'standard')?.price ??
-              sku.tierPrices_on_sku[0]?.price ?? 0;
-
-            return {
-              id: sku.id,
-              nameAr: p.nameAr,
-              nameEn: p.nameEn,
-              price,
-              imageUrl: p.imageUrl ?? '',
-              brand: p.brand.name,
-              brandId: p.brand.id,
-              packagingType,
-              unitVolume: sku.size,
-              unitsPerPackage: uomNum,
-              size: `${sku.size} x ${uomNum}`,
-              internalReference: sku.internalReference,
-              isSubscriptionAvailable: p.isSubscription,
-              sodiumLevel: parseFloat(p.sodiumLevel ?? '0'),
-              phLevel: parseFloat(p.phLevel ?? '7'),
-              rating: 4.5,
-              reviews: 0,
-              isDonation: p.isMosqueDonation,
-            } satisfies Product;
-          })
-      );
+    const flat: Product[] = [];
+    for (const p of (rawData as any).products ?? []) {
+      if (!p.isActive) continue;
+      for (const sku of p.skus_on_product) {
+        if (!sku.isActive || sku.stock <= 0) continue;
+        // Tier-aware price: user's tier → Standard fallback → first available
+        const price =
+          sku.tierPrices_on_sku.find((tp: any) => tp.tier.name.toLowerCase() === tier)?.price ??
+          sku.tierPrices_on_sku.find((tp: any) => tp.tier.name.toLowerCase() === 'standard')?.price ??
+          sku.tierPrices_on_sku[0]?.price ?? 0;
+        const parsed = parseInternalReference(sku.internalReference ?? '');
+        const brandId = BRAND_ID_MAP[p.brand.name] ?? p.brand.name.toLowerCase();
+        flat.push({
+          id: sku.id,
+          nameAr: p.nameAr,
+          nameEn: p.nameEn,
+          price,
+          imageUrl: p.imageUrl ?? '',
+          brand: p.brand.name,
+          brandId,
+          packagingType: parsed.packagingType,
+          unitVolume: parsed.unitVolume || sku.size,
+          unitsPerPackage: parsed.unitsPerPackage,
+          size: `${parsed.unitVolume || sku.size} x ${parsed.unitsPerPackage}`,
+          internalReference: sku.internalReference ?? '',
+          isSubscriptionAvailable: p.isSubscription,
+          sodiumLevel: p.sodiumLevel ? parseFloat(p.sodiumLevel) : 0,
+          phLevel: p.phLevel ? parseFloat(p.phLevel) : 7,
+          rating: 4.5,
+          reviews: 0,
+          isDonation: p.isMosqueDonation,
+        });
+      }
+    }
+    return flat;
   }, [rawData, tier]);
 
   return (
-    <ProductContext.Provider value={{ products, loading }}>
+    <ProductContext.Provider value={{ products, loading, error }}>
       {children}
     </ProductContext.Provider>
   );
