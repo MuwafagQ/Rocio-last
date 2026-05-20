@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
-import { listProducts } from '@firebasegen/rocio-mobile-sdk-connector';
+import { getApp } from 'firebase/app';
+import { getDataConnect } from 'firebase/data-connect';
+import { connectorConfig, listProducts } from '@firebasegen/rocio-mobile-sdk-connector';
 import { useAuth } from './AuthContext';
 import { Product } from '../types';
 
@@ -29,7 +31,6 @@ const BRAND_ID_MAP: Record<string, string> = {
   'Aquafina': 'aquafina',
 };
 
-// Parse internal_reference like "NOVA-1.5L-C12" into packaging metadata
 function parseInternalReference(ref: string): {
   unitVolume: string;
   packagingType: 'CRT' | 'PCS' | 'DUM';
@@ -58,8 +59,9 @@ export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ child
     let active = true;
     (async () => {
       try {
-        // listProducts() uses connectorConfig internally — no explicit dc needed
-        const { data } = await listProducts();
+        // Initialize DataConnect lazily so it doesn't run at module load time
+        const dc = getDataConnect(getApp(), connectorConfig);
+        const { data } = await listProducts(dc);
         if (active) {
           setRawData(data);
           setLoading(false);
