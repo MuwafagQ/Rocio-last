@@ -59,7 +59,6 @@ export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ child
     let active = true;
     (async () => {
       try {
-        // Initialize DataConnect lazily so it doesn't run at module load time
         const dc = getDataConnect(getApp(), connectorConfig);
         const { data } = await listProducts(dc);
         if (active) {
@@ -85,7 +84,7 @@ export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ child
     for (const p of rawData.products ?? []) {
       if (!p.isActive) continue;
       for (const sku of p.skus_on_product) {
-        if (!sku.isActive || sku.stock <= 0) continue;
+        if (!sku.isActive) continue;
         const price =
           sku.tierPrices_on_sku.find((tp: any) => tp.tier.name.toLowerCase() === tier)?.price ??
           sku.tierPrices_on_sku.find((tp: any) => tp.tier.name.toLowerCase() === 'standard')?.price ??
