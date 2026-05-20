@@ -1,5 +1,7 @@
 import React from 'react';
 
+const SPARK = 'M18 72 C10 58,14 36,30 22 C46 8,66 10,76 26 C84 38,80 54,66 62 C54 68,36 62,28 70 C24 74,22 80,18 72Z';
+
 const SplashScreen: React.FC = () => (
   <div style={{
     position:       'fixed',
@@ -25,14 +27,12 @@ const SplashScreen: React.FC = () => (
       background: 'rgba(255,255,255,0.05)', pointerEvents: 'none',
     }} />
 
-    {/* mark */}
-    <svg width="88" height="110" viewBox="0 0 100 125" fill="none"
+    {/* app icon mark */}
+    <svg width="88" height="88" viewBox="0 0 100 100" fill="none"
          style={{ position: 'relative', zIndex: 1 }}>
       <rect x="4" y="4" width="92" height="92" rx="22" fill="url(#splashGrad)" />
-      <g stroke="white" strokeLinecap="round" strokeLinejoin="round" fill="none" strokeWidth="10">
-        <line x1="33" y1="23" x2="33" y2="77" />
-        <path d="M33 23 C55 23,68 30,68 44 C68 58,55 58,33 58" />
-        <line x1="50" y1="58" x2="70" y2="77" />
+      <g transform="translate(12 14) scale(0.8)">
+        <path d={SPARK} fill="#D4186A" />
       </g>
       <defs>
         <linearGradient id="splashGrad" x1="4" y1="4" x2="96" y2="96" gradientUnits="userSpaceOnUse">
@@ -42,21 +42,57 @@ const SplashScreen: React.FC = () => (
       </defs>
     </svg>
 
-    {/* wordmark */}
+    {/* wordmark: Roci + spark-accented ı + o */}
     <div style={{
-      fontFamily:    "'Inter', sans-serif",
-      fontWeight:    800,
-      fontSize:      '2.6rem',
-      letterSpacing: '0.12em',
-      color:         '#fff',
-      marginTop:     20,
-      lineHeight:    1,
-      position:      'relative',
-      zIndex:        1,
+      display:    'inline-flex',
+      alignItems: 'baseline',
+      marginTop:  24,
+      paddingTop: 20,
+      position:   'relative',
+      zIndex:     1,
     }}>
-      Rocío
+      {(['Roci', null, 'o'] as const).map((seg, idx) =>
+        seg !== null ? (
+          <span key={idx} style={{
+            fontFamily:    "'Inter', sans-serif",
+            fontWeight:    800,
+            fontSize:      '2.6rem',
+            letterSpacing: '0.12em',
+            color:         '#fff',
+            lineHeight:    1,
+          }}>{seg}</span>
+        ) : (
+          <span key={idx} style={{ position: 'relative', display: 'inline-block', lineHeight: 1 }}>
+            <span style={{
+              fontFamily:    "'Inter', sans-serif",
+              fontWeight:    800,
+              fontSize:      '2.6rem',
+              letterSpacing: '0.12em',
+              color:         '#fff',
+              lineHeight:    1,
+            }}>&#x131;</span>
+            <svg
+              style={{
+                position:      'absolute',
+                left:          '50%',
+                top:           -19,
+                transform:     'translateX(-50%)',
+                display:       'block',
+                pointerEvents: 'none',
+              }}
+              width="18"
+              height="18"
+              viewBox="0 5 100 80"
+              fill="none"
+            >
+              <path d={SPARK} fill="#D4186A" />
+            </svg>
+          </span>
+        )
+      )}
     </div>
 
+    {/* Arabic name */}
     <div style={{
       fontFamily:    "'Cairo', sans-serif",
       fontWeight:    500,
@@ -68,12 +104,12 @@ const SplashScreen: React.FC = () => (
       position:      'relative',
       zIndex:        1,
     }}>
-      روسيِّو
+      &#x631;&#x648;&#x633;&#x64A;&#x650;&#x651;&#x648;
     </div>
 
     {/* rule */}
     <div style={{
-      display:   'flex',
+      display:    'flex',
       alignItems: 'center',
       gap:        10,
       marginTop:  14,
