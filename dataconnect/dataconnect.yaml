@@ -1,6 +1,6 @@
 specVersion: "v1alpha"
 serviceId: "project-0a287015-616b-4f71-bbf-service"
-location: "us-central1" # Change this if your database is in a different region
+location: "us-east4" # Change this if your database is in a different region
 schema:
   source: "./schema"
   datasource:
