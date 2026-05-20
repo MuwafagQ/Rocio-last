@@ -18,6 +18,7 @@ export interface Product {
   rating: number;
   reviews: number;
   isDonation?: boolean; // New flag for donation products
+  stock?: number; // qty_available from Odoo via DataConnect; undefined = unknown, 0 = out of stock
 }
 
 export interface BrandInfo {

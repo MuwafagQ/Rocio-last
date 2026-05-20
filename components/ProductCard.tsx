@@ -26,6 +26,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onProductClic
   const cartItem = items.find((i) => i.id === product.id);
   const quantity = cartItem?.quantity || 0;
   const isSubscribed = cartItem?.isSubscribed || false;
+  const isOutOfStock = product.stock !== undefined && product.stock === 0;
 
   const handleCardClick = () => {
     if (onProductClick) {
@@ -90,16 +91,22 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onProductClic
                 مشترك حالياً
             </span>
         )}
+        {isOutOfStock && (
+            <span className="bg-red-500 text-white text-[10px] px-2 py-1 rounded-full font-bold">
+                نفذت الكمية
+            </span>
+        )}
       </div>
 
       {/* Image Area */}
       <div className="h-40 relative flex items-center justify-center p-4 transition-colors">
         <div className={`absolute inset-0 ${isSubscribed ? 'bg-secondary/5' : 'bg-gray-50'}`}></div>
+        {isOutOfStock && <div className="absolute inset-0 bg-gray-200/60 z-20 rounded-t-xl" />}
         {product.imageUrl && !imgError ? (
             <img
               src={product.imageUrl}
               alt={product.nameEn}
-              className="max-h-full max-w-full object-contain mix-blend-multiply relative z-10"
+              className={`max-h-full max-w-full object-contain mix-blend-multiply relative z-10 ${isOutOfStock ? 'opacity-40 grayscale' : ''}`}
               onError={() => setImgError(true)}
               referrerPolicy="no-referrer"
             />
@@ -155,7 +162,14 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onProductClic
 
             {/* Quick Actions */}
             <div className="flex items-center justify-between gap-2">
-                {quantity === 0 || hasVariants ? (
+                {isOutOfStock ? (
+                    <button
+                        disabled
+                        className="w-full py-2 rounded-lg font-bold text-sm flex items-center justify-center gap-2 bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed"
+                    >
+                        <span>طلب مسبق</span>
+                    </button>
+                ) : quantity === 0 || hasVariants ? (
                     <button
                         onClick={handleAdd}
                         className={`w-full py-2 rounded-lg font-bold text-sm shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2 ${hasVariants ? 'bg-white text-primary border border-primary' : 'bg-primary text-white'}`}
@@ -194,7 +208,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onProductClic
             </div>
 
             {/* Subscription Toggle */}
-            {product.isSubscriptionAvailable && !hasVariants && (
+            {product.isSubscriptionAvailable && !hasVariants && !isOutOfStock && (
                  <button
                     onClick={handleSubscribeToggle}
                     className={`w-full mt-2 py-1.5 px-2 rounded border border-dashed flex items-center justify-center gap-1.5 text-xs transition-colors ${

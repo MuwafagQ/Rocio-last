@@ -104,6 +104,7 @@ export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ child
           unitsPerPackage: parsed.unitsPerPackage,
           size: `${parsed.unitVolume || sku.size} x ${parsed.unitsPerPackage}`,
           internalReference: sku.internalReference ?? '',
+          stock: sku.stock,
           isSubscriptionAvailable: p.isSubscription,
           sodiumLevel: p.sodiumLevel ? parseFloat(p.sodiumLevel) : 0,
           phLevel: p.phLevel ? parseFloat(p.phLevel) : 7,
