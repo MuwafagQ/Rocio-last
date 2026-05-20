@@ -15,7 +15,6 @@ const SplashScreen: React.FC = () => (
     overflow:       'hidden',
   }}>
 
-    {/* decorative orbs */}
     <div style={{
       position: 'absolute', bottom: -60, left: -60,
       width: 260, height: 260, borderRadius: '50%',
@@ -27,7 +26,6 @@ const SplashScreen: React.FC = () => (
       background: 'rgba(255,255,255,0.05)', pointerEvents: 'none',
     }} />
 
-    {/* app icon mark */}
     <svg width="88" height="88" viewBox="0 0 100 100" fill="none"
          style={{ position: 'relative', zIndex: 1 }}>
       <rect x="4" y="4" width="92" height="92" rx="22" fill="url(#splashGrad)" />
@@ -42,7 +40,7 @@ const SplashScreen: React.FC = () => (
       </defs>
     </svg>
 
-    {/* wordmark: Roci + spark-accented ı + o */}
+    {/* wordmark: Roc + spark-dotted ı + o */}
     <div style={{
       display:    'inline-flex',
       alignItems: 'baseline',
@@ -51,7 +49,7 @@ const SplashScreen: React.FC = () => (
       position:   'relative',
       zIndex:     1,
     }}>
-      {(['Roci', null, 'o'] as const).map((seg, idx) =>
+      {(['Roc', null, 'o'] as const).map((seg, idx) =>
         seg !== null ? (
           <span key={idx} style={{
             fontFamily:    "'Inter', sans-serif",
@@ -75,7 +73,7 @@ const SplashScreen: React.FC = () => (
               style={{
                 position:      'absolute',
                 left:          '50%',
-                top:           -19,
+                top:           -11,
                 transform:     'translateX(-50%)',
                 display:       'block',
                 pointerEvents: 'none',
@@ -92,7 +90,6 @@ const SplashScreen: React.FC = () => (
       )}
     </div>
 
-    {/* Arabic name */}
     <div style={{
       fontFamily:    "'Cairo', sans-serif",
       fontWeight:    500,
@@ -107,7 +104,6 @@ const SplashScreen: React.FC = () => (
       &#x631;&#x648;&#x633;&#x64A;&#x650;&#x651;&#x648;
     </div>
 
-    {/* rule */}
     <div style={{
       display:    'flex',
       alignItems: 'center',
@@ -129,7 +125,6 @@ const SplashScreen: React.FC = () => (
       <div style={{ width: 28, height: 1, background: 'rgba(255,255,255,0.22)' }} />
     </div>
 
-    {/* loading dots */}
     <div style={{ display: 'flex', gap: 6, marginTop: 52, position: 'relative', zIndex: 1 }}>
       {[0, 1, 2].map(i => (
         <div key={i} style={{

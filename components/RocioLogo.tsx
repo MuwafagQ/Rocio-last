@@ -1,6 +1,5 @@
 import React from 'react';
 
-// Option C "Spark" — speech-bubble silhouette with bottom-left tail
 const SPARK = 'M18 72 C10 58,14 36,30 22 C46 8,66 10,76 26 C84 38,80 54,66 62 C54 68,36 62,28 70 C24 74,22 80,18 72Z';
 const ROSE  = '#D4186A';
 
@@ -44,6 +43,8 @@ const RocioLogo: React.FC<RocioLogoProps> = ({
 
   const fs       = size * 0.46;
   const accentSz = Math.round(fs * 0.44);
+  // close gap: sit accent like a dot, just above the stem cap
+  const accentTop = -Math.round(accentSz * 0.62);
 
   const letterStyle: React.CSSProperties = {
     fontFamily:    "'Inter', sans-serif",
@@ -56,18 +57,17 @@ const RocioLogo: React.FC<RocioLogoProps> = ({
 
   const wordmark = (
     <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1 }}>
-      {/* English wordmark: Roci + spark-accented ı + o */}
+      {/* "Roc" + spark-dotted ı + "o" = Rocío — no double i */}
       <div style={{ display: 'inline-flex', alignItems: 'baseline' }}>
-        <span style={letterStyle}>Roci</span>
+        <span style={letterStyle}>Roc</span>
 
-        {/* dotless-i with spark accent mark */}
         <span style={{ position: 'relative', display: 'inline-block', lineHeight: 1 }}>
           <span style={letterStyle}>&#x131;</span>
           <svg
             style={{
               position:      'absolute',
               left:          '50%',
-              top:           -(accentSz + 1),
+              top:           accentTop,
               transform:     'translateX(-50%)',
               display:       'block',
               pointerEvents: 'none',
