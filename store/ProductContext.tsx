@@ -82,9 +82,7 @@ export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (!rawData) return [];
     const flat: Product[] = [];
     for (const p of rawData.products ?? []) {
-      if (!p.isActive) continue;
       for (const sku of p.skus_on_product) {
-        if (!sku.isActive) continue;
         const price =
           sku.tierPrices_on_sku.find((tp: any) => tp.tier.name.toLowerCase() === tier)?.price ??
           sku.tierPrices_on_sku.find((tp: any) => tp.tier.name.toLowerCase() === 'standard')?.price ??

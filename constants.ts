@@ -18,6 +18,7 @@ export const MOCK_PRODUCTS: Product[] = [
     phLevel: 7.4,
     rating: 4.8,
     reviews: 1240,
+    internalReference: '',
   },
   {
     id: '1-2',
@@ -36,6 +37,7 @@ export const MOCK_PRODUCTS: Product[] = [
     phLevel: 7.4,
     rating: 4.8,
     reviews: 1240,
+    internalReference: '',
   },
   {
     id: '2',
@@ -54,6 +56,7 @@ export const MOCK_PRODUCTS: Product[] = [
     phLevel: 7.2,
     rating: 4.7,
     reviews: 950,
+    internalReference: '',
   },
   {
     id: '3',
@@ -72,6 +75,7 @@ export const MOCK_PRODUCTS: Product[] = [
     phLevel: 7.0,
     rating: 4.2,
     reviews: 340,
+    internalReference: '',
   },
   {
     id: '4',
@@ -90,6 +94,7 @@ export const MOCK_PRODUCTS: Product[] = [
     phLevel: 8.0,
     rating: 5.0,
     reviews: 2500,
+    internalReference: '',
   },
   {
     id: '5',
@@ -108,6 +113,7 @@ export const MOCK_PRODUCTS: Product[] = [
     phLevel: 6.9,
     rating: 4.5,
     reviews: 560,
+    internalReference: '',
   },
   {
     id: '6',
@@ -126,6 +132,7 @@ export const MOCK_PRODUCTS: Product[] = [
     phLevel: 7.0,
     rating: 4.3,
     reviews: 890,
+    internalReference: '',
   },
   {
     id: '7',
@@ -144,6 +151,7 @@ export const MOCK_PRODUCTS: Product[] = [
     phLevel: 7.3,
     rating: 4.4,
     reviews: 720,
+    internalReference: '',
   },
   {
     id: '8',
@@ -162,6 +170,7 @@ export const MOCK_PRODUCTS: Product[] = [
     phLevel: 7.8,
     rating: 4.6,
     reviews: 410,
+    internalReference: '',
   },
   {
     id: '9',
@@ -180,6 +189,7 @@ export const MOCK_PRODUCTS: Product[] = [
     phLevel: 7.1,
     rating: 4.1,
     reviews: 300,
+    internalReference: '',
   },
   {
     id: '10',
@@ -198,6 +208,7 @@ export const MOCK_PRODUCTS: Product[] = [
     phLevel: 7.2,
     rating: 4.0,
     reviews: 150,
+    internalReference: '',
   },
 ];
 
@@ -219,6 +230,7 @@ export const DONATION_PRODUCTS: Product[] = [
       phLevel: 7,
       rating: 5,
       reviews: 999,
+    internalReference: '',
       isDonation: true,
     },
     {
@@ -238,6 +250,7 @@ export const DONATION_PRODUCTS: Product[] = [
       phLevel: 7,
       rating: 5,
       reviews: 999,
+    internalReference: '',
       isDonation: true,
     },
 ];
