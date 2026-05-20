@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { listProducts } from '@firebasegen/rocio-mobile-sdk-connector';
-import { dataConnect } from '../firebase';
 import { useAuth } from './AuthContext';
 import { Product } from '../types';
 
@@ -30,7 +29,7 @@ const BRAND_ID_MAP: Record<string, string> = {
   'Aquafina': 'aquafina',
 };
 
-// Parse internal_reference like "NOVA-1.5L-C12" → packaging metadata
+// Parse internal_reference like "NOVA-1.5L-C12" into packaging metadata
 function parseInternalReference(ref: string): {
   unitVolume: string;
   packagingType: 'CRT' | 'PCS' | 'DUM';
@@ -51,7 +50,7 @@ function parseInternalReference(ref: string): {
 
 export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
-  const [rawData, setRawData] = useState<{ products: typeof [] } | null>(null);
+  const [rawData, setRawData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -59,9 +58,10 @@ export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ child
     let active = true;
     (async () => {
       try {
-        const { data } = await listProducts(dataConnect);
+        // listProducts() uses connectorConfig internally — no explicit dc needed
+        const { data } = await listProducts();
         if (active) {
-          setRawData(data as any);
+          setRawData(data);
           setLoading(false);
         }
       } catch (e) {
@@ -80,11 +80,10 @@ export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const products = useMemo<Product[]>(() => {
     if (!rawData) return [];
     const flat: Product[] = [];
-    for (const p of (rawData as any).products ?? []) {
+    for (const p of rawData.products ?? []) {
       if (!p.isActive) continue;
       for (const sku of p.skus_on_product) {
         if (!sku.isActive || sku.stock <= 0) continue;
-        // Tier-aware price: user's tier → Standard fallback → first available
         const price =
           sku.tierPrices_on_sku.find((tp: any) => tp.tier.name.toLowerCase() === tier)?.price ??
           sku.tierPrices_on_sku.find((tp: any) => tp.tier.name.toLowerCase() === 'standard')?.price ??
