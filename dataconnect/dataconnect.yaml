@@ -5,8 +5,8 @@ schema:
   source: "./schema"
   datasource:
     postgresql:
-      database: "fdc"
+      database: "postgres"
       cloudSql:
-        instanceId: "ai-studio-c3a54b30-a4c1-4b07-916e-e5d047d94454"
+        instanceId: "project-0a287015-616b-4f71-bbf-instance"
 connectorDirs:
   - "./connector"
