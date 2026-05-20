@@ -57,6 +57,7 @@ export interface User {
   phone?: string;
   avatarUrl?: string;
   role?: 'admin' | 'user';
+  tier?: 'standard' | 'subscriber' | 'corporate' | 'mosque';
 }
 
 export enum StockPreference {

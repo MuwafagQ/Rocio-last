@@ -1,78 +1,122 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { listProducts } from '@firebasegen/rocio-mobile-sdk-connector';
+import { useAuth } from './AuthContext';
 import { Product } from '../types';
+
+type TierName = 'standard' | 'subscriber' | 'corporate' | 'mosque';
 
 interface ProductContextType {
   products: Product[];
   loading: boolean;
+  error: string | null;
 }
 
-const ProductContext = createContext<ProductContextType>({ products: [], loading: true });
+const ProductContext = createContext<ProductContextType>({
+  products: [],
+  loading: true,
+  error: null,
+});
+
+const BRAND_ID_MAP: Record<string, string> = {
+  'Nova': 'nova',
+  'Berain': 'berain',
+  'Safa': 'safa',
+  'OB': 'ob',
+  'Rest': 'rest',
+  'Tania': 'tania',
+  'Zamzam': 'zamzam',
+  'Arwa': 'arwa',
+  'Aquafina': 'aquafina',
+};
+
+// Parse internal_reference like "NOVA-1.5L-C12" into packaging metadata
+function parseInternalReference(ref: string): {
+  unitVolume: string;
+  packagingType: 'CRT' | 'PCS' | 'DUM';
+  unitsPerPackage: number;
+} {
+  const match = ref.match(/^[A-Z]+-([0-9.]+(?:ML|L|ml|l))-([CDP])(\d+)?$/i);
+  if (!match) {
+    return { unitVolume: '', packagingType: 'PCS', unitsPerPackage: 1 };
+  }
+  const [, sizeStr, packCode, countStr] = match;
+  const packTypeMap: Record<string, 'CRT' | 'PCS' | 'DUM'> = { C: 'CRT', P: 'PCS', D: 'DUM' };
+  return {
+    unitVolume: sizeStr.replace(/ml$/i, 'ml').replace(/(\d)l$/i, '$1L'),
+    packagingType: packTypeMap[packCode.toUpperCase()] ?? 'PCS',
+    unitsPerPackage: countStr ? parseInt(countStr, 10) : 1,
+  };
+}
 
 export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [products, setProducts] = useState<Product[]>([]);
+  const { user } = useAuth();
+  const [rawData, setRawData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
-
-    listProducts().then(({ data }) => {
-      if (!active) return;
-
-      const mapped: Product[] = (data?.products ?? [])
-        .filter(p => p.isActive)
-        .flatMap(p =>
-          p.skus_on_product
-            .filter(sku => sku.isActive && sku.stock > 0)
-            .map(sku => {
-              const uomNum = parseInt(sku.uom.replace(/\D/g, ''), 10) || 1;
-              const packagingType: 'CRT' | 'PCS' | 'DUM' =
-                sku.uom.toUpperCase().startsWith('C') ? 'CRT' :
-                sku.uom.toUpperCase() === 'PCS' ? 'PCS' : 'DUM';
-
-              // Use Standard tier price; fall back to first available price
-              const price =
-                sku.tierPrices_on_sku.find(
-                  tp => tp.tier.name.toLowerCase() === 'standard'
-                )?.price ??
-                sku.tierPrices_on_sku[0]?.price ??
-                0;
-
-              return {
-                id: sku.id,
-                nameAr: p.nameAr,
-                nameEn: p.nameEn,
-                price,
-                imageUrl: p.imageUrl ?? '',
-                brand: p.brand.name,
-                brandId: p.brand.id,
-                packagingType,
-                unitVolume: sku.size,
-                unitsPerPackage: uomNum,
-                size: `${sku.size} x ${uomNum}`,
-                internalReference: sku.internalReference,
-                isSubscriptionAvailable: p.isSubscription,
-                sodiumLevel: parseFloat(p.sodiumLevel ?? '0'),
-                phLevel: parseFloat(p.phLevel ?? '7'),
-                rating: 4.5,
-                reviews: 0,
-                isDonation: p.isMosqueDonation,
-              } satisfies Product;
-            })
-        );
-
-      setProducts(mapped);
-      setLoading(false);
-    }).catch(err => {
-      console.error('DataConnect listProducts failed:', err);
-      if (active) setLoading(false);
-    });
-
+    (async () => {
+      try {
+        // listProducts() uses connectorConfig internally — no explicit dc needed
+        const { data } = await listProducts();
+        if (active) {
+          setRawData(data);
+          setLoading(false);
+        }
+      } catch (e) {
+        console.error('DataConnect listProducts failed:', e);
+        if (active) {
+          setError((e as Error).message);
+          setLoading(false);
+        }
+      }
+    })();
     return () => { active = false; };
   }, []);
 
+  const tier: TierName = (user?.tier ?? 'standard') as TierName;
+
+  const products = useMemo<Product[]>(() => {
+    if (!rawData) return [];
+    const flat: Product[] = [];
+    for (const p of rawData.products ?? []) {
+      if (!p.isActive) continue;
+      for (const sku of p.skus_on_product) {
+        if (!sku.isActive || sku.stock <= 0) continue;
+        const price =
+          sku.tierPrices_on_sku.find((tp: any) => tp.tier.name.toLowerCase() === tier)?.price ??
+          sku.tierPrices_on_sku.find((tp: any) => tp.tier.name.toLowerCase() === 'standard')?.price ??
+          sku.tierPrices_on_sku[0]?.price ?? 0;
+        const parsed = parseInternalReference(sku.internalReference ?? '');
+        const brandId = BRAND_ID_MAP[p.brand.name] ?? p.brand.name.toLowerCase();
+        flat.push({
+          id: sku.id,
+          nameAr: p.nameAr,
+          nameEn: p.nameEn,
+          price,
+          imageUrl: p.imageUrl ?? '',
+          brand: p.brand.name,
+          brandId,
+          packagingType: parsed.packagingType,
+          unitVolume: parsed.unitVolume || sku.size,
+          unitsPerPackage: parsed.unitsPerPackage,
+          size: `${parsed.unitVolume || sku.size} x ${parsed.unitsPerPackage}`,
+          internalReference: sku.internalReference ?? '',
+          isSubscriptionAvailable: p.isSubscription,
+          sodiumLevel: p.sodiumLevel ? parseFloat(p.sodiumLevel) : 0,
+          phLevel: p.phLevel ? parseFloat(p.phLevel) : 7,
+          rating: 4.5,
+          reviews: 0,
+          isDonation: p.isMosqueDonation,
+        });
+      }
+    }
+    return flat;
+  }, [rawData, tier]);
+
   return (
-    <ProductContext.Provider value={{ products, loading }}>
+    <ProductContext.Provider value={{ products, loading, error }}>
       {children}
     </ProductContext.Provider>
   );
