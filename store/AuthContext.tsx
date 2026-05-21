@@ -99,8 +99,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const cred = await signInAnonymously(auth);
       const uid = cred.user.uid;
 
-      // Persist profile so mapFirebaseUserToLocal finds it on subsequent sessions
-      await setDoc(doc(db, 'users', uid), { name, phone, role: 'user', tier: 'standard' }, { merge: true });
+      // Fields match the Firestore create rule: hasOnly([uid, name, email, phone, avatarUrl, default_address])
+      await setDoc(doc(db, 'users', uid), { uid, name, phone, email: '' }, { merge: true });
 
       // Set state immediately so the UI doesn't flash "عميل المتجر"
       setUser({
@@ -115,9 +115,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       // Non-fatal: sync to Odoo + DataConnect via n8n
       callRegisterWebhook(uid, '', phone, name);
-    } catch {
-      setError('حدث خطأ أثناء التسجيل، يرجى المحاولة مرة أخرى');
-      throw new Error('registration-failed');
+    } catch (err: any) {
+      const code = err?.code ?? err?.message ?? 'unknown';
+      console.error('registerAnonymous failed:', code, err);
+      // Show the Firebase error code in dev so we can diagnose (e.g. auth/operation-not-allowed)
+      setError(`حدث خطأ أثناء التسجيل (${code})`);
+      throw err;
     } finally {
       setIsLoading(false);
     }
