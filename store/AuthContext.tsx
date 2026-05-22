@@ -3,21 +3,23 @@ import { User } from '../types';
 import { auth, db } from '../firebase';
 import {
   signInWithEmailAndPassword,
-  signInWithCustomToken,
+  signInAnonymously,
   onAuthStateChanged,
   signOut,
   User as FirebaseUser
 } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  sendOtp: (phone: string, name: string) => Promise<void>;
-  verifyOtp: (phone: string, code: string) => Promise<void>;
+  registerAnonymous: (name: string, phone: string) => Promise<void>;
   loginWithEmail: (email: string, pass: string) => Promise<void>;
   logout: () => void;
   error: string | null;
+  // TODO: Re-enable when Meta approves rocio_otp template + Cloud Function token minting replaces n8n custom-token flow
+  // sendOtp: (phone: string, name: string) => Promise<void>;
+  // verifyOtp: (phone: string, code: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -90,67 +92,43 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     });
   };
 
-  const sendOtp = async (phone: string, name: string) => {
+  const registerAnonymous = async (name: string, phone: string) => {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch('https://n8n.srv1473225.hstgr.cloud/webhook/send-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, name }),
+      const cred = await signInAnonymously(auth);
+      const uid = cred.user.uid;
+
+      // Fields match the Firestore create rule: hasOnly([uid, name, email, phone, avatarUrl, default_address])
+      await setDoc(doc(db, 'users', uid), { uid, name, phone, email: '' }, { merge: true });
+
+      // Set state immediately so the UI doesn't flash "عميل المتجر"
+      setUser({
+        id: uid,
+        name,
+        email: '',
+        phone,
+        avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`,
+        role: 'user',
+        tier: 'standard',
       });
-      if (!res.ok) throw new Error('send-otp-failed');
-    } catch {
-      setError('حدث خطأ أثناء إرسال الرمز، يرجى المحاولة مرة أخرى');
-      throw new Error('send-otp-failed');
+
+      // Non-fatal: sync to Odoo + DataConnect via n8n
+      callRegisterWebhook(uid, '', phone, name);
+    } catch (err: any) {
+      const code = err?.code ?? err?.message ?? 'unknown';
+      console.error('registerAnonymous failed:', code, err);
+      // Show the Firebase error code in dev so we can diagnose (e.g. auth/operation-not-allowed)
+      setError(`حدث خطأ أثناء التسجيل (${code})`);
+      throw err;
     } finally {
       setIsLoading(false);
     }
   };
 
-  const verifyOtp = async (phone: string, code: string) => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const res = await fetch('https://n8n.srv1473225.hstgr.cloud/webhook/verify-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, code }),
-      });
-      let data: any = {};
-      try { data = await res.json(); } catch {}
-
-      if (!data.success || !data.token) {
-        const msg =
-          data.message === 'expired'
-            ? 'انتهت صلاحية الرمز، اطلب رمزاً جديداً'
-            : data.message === 'too_many_attempts'
-            ? 'تجاوزت عدد المحاولات، اطلب رمزاً جديداً'
-            : 'رمز التحقق غير صحيح';
-        setError(msg);
-        setIsLoading(false);
-        return;
-      }
-
-      await signInWithCustomToken(auth, data.token);
-
-      // Register with Odoo + DataConnect; n8n upserts so safe to call on every login
-      if (auth.currentUser) {
-        const uid = auth.currentUser.uid;
-        const cleanPhone = phone.replace(/\D/g, '');
-        await callRegisterWebhook(
-          uid,
-          `${cleanPhone}@rocio.app`,
-          phone,
-          phone
-        );
-      }
-      // onAuthStateChanged fires next and calls mapFirebaseUserToLocal
-    } catch {
-      setError('فشل التحقق، يرجى المحاولة مرة أخرى');
-      setIsLoading(false);
-    }
-  };
+  // TODO: Re-enable when Meta approves rocio_otp template + Cloud Function token minting replaces n8n custom-token flow
+  // const sendOtp = async (phone: string, name: string) => { ... fetch /webhook/send-otp ... }
+  // const verifyOtp = async (phone: string, code: string) => { ... fetch /webhook/verify-otp, signInWithCustomToken ... }
 
   const loginWithEmail = async (email: string, pass: string) => {
     setIsLoading(true);
@@ -180,7 +158,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, sendOtp, verifyOtp, loginWithEmail, logout, error }}>
+    <AuthContext.Provider value={{ user, isLoading, registerAnonymous, loginWithEmail, logout, error }}>
       {children}
     </AuthContext.Provider>
   );

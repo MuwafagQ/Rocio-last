@@ -3,7 +3,7 @@ const { queryRef, executeQuery, validateArgsWithOptions, mutationRef, executeMut
 const connectorConfig = {
   connector: 'rocio-mobile-sdk',
   service: 'project-0a287015-616b-4f71-bbf-service',
-  location: 'us-central1'
+  location: 'us-east4'
 };
 exports.connectorConfig = connectorConfig;
 

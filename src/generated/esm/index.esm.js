@@ -3,7 +3,7 @@ import { queryRef, executeQuery, validateArgsWithOptions, mutationRef, executeMu
 export const connectorConfig = {
   connector: 'rocio-mobile-sdk',
   service: 'project-0a287015-616b-4f71-bbf-service',
-  location: 'us-central1'
+  location: 'us-east4'
 };
 export const upsertUserRef = (dcOrVars, vars) => {
   const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);

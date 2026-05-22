@@ -19,7 +19,7 @@ interface HomeProps {
 
 export const Home: React.FC<HomeProps> = ({ onGoToCart, onGoToProfile, onGoToSupport, onProductClick }) => {
   const { items } = useCart();
-  const { products: MOCK_PRODUCTS, loading } = useProducts();
+  const { products: MOCK_PRODUCTS, loading, error: productError } = useProducts();
   const cartCount = items.reduce((acc, item) => acc + item.quantity, 0);
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -253,6 +253,11 @@ export const Home: React.FC<HomeProps> = ({ onGoToCart, onGoToProfile, onGoToSup
             </div>
         </div>
         
+        {productError && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-600 font-mono break-all">
+                ⚠️ DataConnect: {productError}
+            </div>
+        )}
         {loading ? (
             <div className="flex justify-center items-center py-12">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>

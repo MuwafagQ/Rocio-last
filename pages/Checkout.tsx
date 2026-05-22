@@ -4,148 +4,263 @@ import { useAuth } from '../store/AuthContext';
 import { Login } from './Login';
 import { TIME_SLOTS, VAT_RATE, DELIVERY_FEE, DONATION_PRODUCTS } from '../constants';
 import { StockPreference, SubscriptionFrequency } from '../types';
-import { Trash2, Calendar, Clock, MapPin, CheckCircle, Truck, Recycle, RefreshCw, ChevronDown, Heart, Plus, Package, CreditCard, Wallet, Navigation as NavigationIcon, User, AlertCircle, Zap } from 'lucide-react';
+import { Trash2, Calendar, Clock, MapPin, CheckCircle, Truck, Recycle, RefreshCw, ChevronDown, Heart, Plus, Package, CreditCard, Wallet, Navigation as NavigationIcon, User, AlertCircle, Zap, Phone, Star } from 'lucide-react';
 import { LocationPicker } from '../components/LocationPicker';
 import { VisualAddress } from '../components/VisualAddress';
+import { useOrderStatus } from '../hooks/useOrderStatus';
 
-interface OrderStatus {
-  status: 'pending' | 'assigned' | 'en_route' | 'delivered' | 'cancelled';
-  driver_name?: string;
-  driver_phone?: string;
-  eta_minutes?: number;
-  driver_lat?: number;
-  driver_lng?: number;
-  updated_at?: number;
+// Maps last_updated_at (seconds or ms) to Arabic relative time string
+function relativeTime(ts: number | undefined): string {
+  if (!ts) return '';
+  const ms = ts < 1e12 ? ts * 1000 : ts; // handle both unix-seconds and ms
+  const diff = Math.floor((Date.now() - ms) / 1000);
+  const rtf = new Intl.RelativeTimeFormat('ar', { numeric: 'auto' });
+  if (diff < 60) return rtf.format(-diff, 'second');
+  if (diff < 3600) return rtf.format(-Math.floor(diff / 60), 'minute');
+  return rtf.format(-Math.floor(diff / 3600), 'hour');
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  pending: 'في انتظار التعيين',
-  assigned: 'تم تعيين السائق',
-  en_route: 'السائق في الطريق',
-  delivered: 'تم التوصيل',
-  cancelled: 'تم الإلغاء',
-};
+const STEP_LABELS = [
+  'في انتظار التعيين',
+  'تم تعيين السائق',
+  'السائق في الطريق',
+  'تم التوصيل',
+];
+
+// RTDB status → highest lit step index (0-based).
+// 'assigned' conflates steps 1 and 2 (driver assigned + on the way) as we have no in_transit signal.
+function statusToStepIdx(status: string | undefined): number {
+  switch (status) {
+    case 'pending':          return 0;
+    case 'assigned':         return 2; // lights steps 0, 1, 2
+    case 'delivered':        return 3; // all 4
+    default:                 return -1; // failed_delivery or loading → all gray
+  }
+}
 
 export const OrderTracking: React.FC<{ orderId: string; onDone: () => void; isCard?: boolean }> = ({ orderId, onDone, isCard }) => {
-  const [orderStatus, setOrderStatus] = useState<OrderStatus | null>(null);
-  const [rtdbError, setRtdbError] = useState(false);
-  const unsubRef = useRef<(() => void) | null>(null);
+  const { user } = useAuth();
+  const [refreshKey, setRefreshKey] = useState(0);
+  const { data, loading, error, cachedCustomerPhone } = useOrderStatus(orderId, refreshKey);
+  const [pendingTooLong, setPendingTooLong] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const [isPTRActive, setIsPTRActive] = useState(false);
+  const pendingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchStartY = useRef(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const dy = e.changedTouches[0].clientY - touchStartY.current;
+    const atTop = (scrollRef.current?.scrollTop ?? 0) === 0;
+    if (dy > 70 && atTop) {
+      setIsPTRActive(true);
+      setRefreshKey(k => k + 1);
+      setTimeout(() => setIsPTRActive(false), 1200);
+    }
+  };
+
+  // Show "جاري تعيين السائق…" hint if pending for more than 10s
   useEffect(() => {
-    let cancelled = false;
+    if (data?.status === 'pending') {
+      pendingTimer.current = setTimeout(() => setPendingTooLong(true), 10_000);
+    } else {
+      setPendingTooLong(false);
+      if (pendingTimer.current) clearTimeout(pendingTimer.current);
+    }
+    return () => { if (pendingTimer.current) clearTimeout(pendingTimer.current); };
+  }, [data?.status]);
 
-    const subscribe = async () => {
-      try {
-        const { ref, onValue } = await import('firebase/database');
-        const { rtdb } = await import('../firebase');
-        const statusRef = ref(rtdb, `/order_status/${orderId}`);
-        const unsub = onValue(statusRef, (snapshot) => {
-          if (cancelled) return;
-          const data = snapshot.val();
-          if (data) {
-             setOrderStatus(data as OrderStatus);
-             if (data.status === 'delivered' || data.status === 'cancelled') {
-                 localStorage.removeItem('activeOrderId');
-             }
-          }
-        }, () => {
-          if (!cancelled) setRtdbError(true);
-        });
-        unsubRef.current = unsub;
-      } catch {
-        if (!cancelled) setRtdbError(true);
-      }
-    };
+  const handleRetry = async () => {
+    setRetrying(true);
+    try {
+      await fetch('https://n8n.srv1473225.hstgr.cloud/webhook/delivery-trigger', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          order_id: orderId,
+          customer_id: user?.phone || user?.email || cachedCustomerPhone || '',
+          delivery_address: localStorage.getItem('user_location') || '',
+        }),
+      });
+    } finally {
+      setRetrying(false);
+    }
+  };
 
-    subscribe();
-    return () => {
-      cancelled = true;
-      unsubRef.current?.();
-    };
-  }, [orderId]);
-
-  const status = orderStatus?.status ?? 'pending';
+  const status = data?.status;
+  const isFailed = status === 'failed_delivery';
   const isDelivered = status === 'delivered';
-  const isCancelled = status === 'cancelled';
-
-  const steps = ['pending', 'assigned', 'en_route', 'delivered'];
-  const stepIdx = steps.indexOf(status);
+  const stepIdx = statusToStepIdx(status);
+  const showDriverCard = (status === 'assigned') && data?.driver_name;
 
   return (
-    <div className={isCard ? "flex flex-col bg-transparent" : "h-screen flex flex-col bg-gray-50"}>
+    <div className={isCard ? 'flex flex-col bg-transparent' : 'h-screen flex flex-col bg-gray-50'}>
       {!isCard && (
         <div className="bg-white px-4 pt-12 pb-6 shadow-sm text-center">
-          <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3 ${isDelivered ? 'bg-green-100' : isCancelled ? 'bg-red-100' : 'bg-primary/10'}`}>
-            {isDelivered ? <CheckCircle size={32} className="text-green-600" /> : isCancelled ? <AlertCircle size={32} className="text-red-500" /> : <Truck size={32} className="text-primary animate-pulse" />}
+          <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3 ${isDelivered ? 'bg-green-100' : isFailed ? 'bg-red-100' : 'bg-primary/10'}`}>
+            {isDelivered
+              ? <CheckCircle size={32} className="text-green-600" />
+              : isFailed
+              ? <AlertCircle size={32} className="text-red-500" />
+              : <Truck size={32} className="text-primary animate-pulse" />}
           </div>
           <h2 className="text-xl font-bold text-gray-800">
-            {isDelivered ? 'تم التوصيل بنجاح!' : isCancelled ? 'تم إلغاء الطلب' : 'تتبع طلبك'}
+            {isDelivered ? 'تم التوصيل بنجاح!' : isFailed ? 'تعذّر التوصيل' : 'تتبع طلبك'}
           </h2>
           <p className="text-sm text-gray-400 mt-1">رقم الطلب #{orderId}</p>
         </div>
       )}
 
-      <div className={`flex-1 overflow-y-auto space-y-4 ${isCard ? 'py-2' : 'px-4 py-6'}`}>
-        {!isCancelled && (
-          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between">
-              {steps.map((step, i) => (
-                <React.Fragment key={step}>
+      <div
+        ref={scrollRef}
+        className={`flex-1 overflow-y-auto space-y-4 ${isCard ? 'py-2' : 'px-4 py-6'}`}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
+        {/* Pull-to-refresh indicator */}
+        {isPTRActive && (
+          <div className="flex items-center justify-center gap-2 py-2 text-primary text-sm">
+            <RefreshCw size={16} className="animate-spin" />
+            <span>جاري التحديث…</span>
+          </div>
+        )}
+
+        {/* Failed delivery — red banner + retry */}
+        {isFailed && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+            <p className="text-red-700 font-bold text-sm mb-3 text-center">تعذّر التوصيل — يرجى المحاولة مجدداً</p>
+            <button
+              onClick={handleRetry}
+              disabled={retrying}
+              className="w-full py-2.5 rounded-lg bg-red-600 text-white font-bold text-sm flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-60"
+            >
+              {retrying ? <RefreshCw size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+              إعادة تعيين السائق
+            </button>
+          </div>
+        )}
+
+        {/* 4-step stepper */}
+        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+          <div className="flex items-center justify-between">
+            {STEP_LABELS.map((label, i) => {
+              const active = stepIdx >= 0 && i <= stepIdx;
+              const completed = stepIdx >= 0 && i < stepIdx;
+              return (
+                <React.Fragment key={label}>
                   <div className="flex flex-col items-center gap-1">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${i <= stepIdx ? 'bg-primary text-white' : 'bg-gray-100 text-gray-400'}`}>
-                      {i < stepIdx ? <CheckCircle size={16} /> : i + 1}
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${isFailed ? 'bg-gray-100 text-gray-300' : active ? 'bg-primary text-white' : 'bg-gray-100 text-gray-400'}`}>
+                      {completed && !isFailed ? <CheckCircle size={16} /> : i + 1}
                     </div>
-                    <span className={`text-[10px] text-center leading-tight ${i <= stepIdx ? 'text-primary font-bold' : 'text-gray-400'}`}>
-                      {STATUS_LABELS[step]}
+                    <span className={`text-[10px] text-center leading-tight ${isFailed ? 'text-gray-300' : active ? 'text-primary font-bold' : 'text-gray-400'}`}>
+                      {label}
                     </span>
                   </div>
-                  {i < steps.length - 1 && (
-                    <div className={`flex-1 h-0.5 mx-1 mb-4 ${i < stepIdx ? 'bg-primary' : 'bg-gray-200'}`} />
+                  {i < STEP_LABELS.length - 1 && (
+                    <div className={`flex-1 h-0.5 mx-1 mb-4 ${isFailed ? 'bg-gray-100' : i < stepIdx ? 'bg-primary' : 'bg-gray-200'}`} />
                   )}
                 </React.Fragment>
-              ))}
-            </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Pending too long hint */}
+        {pendingTooLong && status === 'pending' && (
+          <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-sm text-blue-600 text-center">
+            جاري تعيين السائق…
           </div>
         )}
 
-        {orderStatus?.driver_name && (
-          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center gap-4">
-            <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
-              <User size={24} className="text-primary" />
-            </div>
-            <div className="flex-1">
-              <p className="text-xs text-gray-400">السائق</p>
-              <p className="font-bold text-gray-800">{orderStatus.driver_name}</p>
-              {orderStatus.eta_minutes !== undefined && (
-                <p className="text-sm text-secondary font-medium mt-0.5">الوصول خلال ~{orderStatus.eta_minutes} دقيقة</p>
-              )}
-            </div>
-            {orderStatus.driver_phone && (
-              <a href={`tel:${orderStatus.driver_phone}`} className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center text-green-600 active:scale-95 transition-transform">
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.8 19.79 19.79 0 01.93 1.18 2 2 0 012.92 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L7.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 14.92z"/></svg>
-              </a>
-            )}
-          </div>
-        )}
-
-        {orderStatus?.driver_lat && orderStatus?.driver_lng && (
-          <a href={`https://www.google.com/maps/dir/?api=1&destination=${orderStatus.driver_lat},${orderStatus.driver_lng}`} target="_blank" rel="noopener noreferrer"
-            className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl p-4 text-blue-700 font-bold active:scale-[0.99] transition-transform">
-            <NavigationIcon size={20} className="text-blue-600" />
-            <span>تتبع السائق على الخريطة</span>
-          </a>
-        )}
-
-        {!orderStatus && !rtdbError && (
+        {/* Loading spinner */}
+        {loading && (
           <div className="text-center py-8 text-gray-400">
             <RefreshCw size={28} className="mx-auto mb-3 animate-spin" />
             <p className="text-sm">جاري تحديث حالة الطلب...</p>
           </div>
         )}
 
-        {rtdbError && (
+        {/* RTDB connection error */}
+        {error && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-sm text-yellow-700 text-center">
             تعذّر الاتصال بخدمة التتبع. ستصلك إشعارات واتسآب عند تعيين السائق.
+          </div>
+        )}
+
+        {/* Driver info card — visible when assigned */}
+        {showDriverCard && (
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+            <div className="flex items-center gap-4 mb-3">
+              <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center shrink-0">
+                <User size={24} className="text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-gray-400">السائق</p>
+                <p className="font-bold text-gray-800 truncate">{data.driver_name}</p>
+                {data.vehicle_type && (
+                  <p className="text-xs text-gray-500 mt-0.5">{data.vehicle_type}</p>
+                )}
+              </div>
+              {data.last_updated_at && (
+                <p className="text-[10px] text-gray-400 shrink-0">{relativeTime(data.last_updated_at)}</p>
+              )}
+            </div>
+            <div className="flex gap-3">
+              {data.driver_phone && (
+                <a
+                  href={`tel:${data.driver_phone}`}
+                  className="flex-1 py-2.5 rounded-xl bg-green-100 text-green-700 font-bold text-sm flex items-center justify-center gap-2 active:scale-95 transition-transform"
+                >
+                  <Phone size={16} />
+                  اتصل بالسائق
+                </a>
+              )}
+              {data.navigation_link && (
+                <a
+                  href={data.navigation_link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 py-2.5 rounded-xl bg-blue-100 text-blue-700 font-bold text-sm flex items-center justify-center gap-2 active:scale-95 transition-transform"
+                >
+                  <NavigationIcon size={16} />
+                  افتح الخريطة
+                </a>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Delivered success block */}
+        {isDelivered && (
+          <div className="bg-green-50 border border-green-200 rounded-xl p-5 text-center">
+            <p className="text-2xl mb-2">🙌</p>
+            <p className="font-bold text-green-800 text-lg mb-1">تم التسليم</p>
+            {data?.last_updated_at && (
+              <p className="text-xs text-green-600 mb-4">{relativeTime(data.last_updated_at)}</p>
+            )}
+            <button
+              onClick={() => {
+                // TODO: wire to rating endpoint when available
+                console.log('TODO: POST /webhook/rate-delivery for order', orderId);
+              }}
+              className="w-full py-2.5 rounded-xl bg-white border border-green-300 text-green-700 font-bold text-sm flex items-center justify-center gap-2 active:scale-95 transition-transform"
+            >
+              <Star size={16} />
+              قيّم التوصيل
+            </button>
+          </div>
+        )}
+
+        {/* Node missing entirely */}
+        {!loading && !error && data === null && (
+          <div className="text-center py-12 text-gray-400">
+            <Package size={48} className="mx-auto mb-4 opacity-40" />
+            <p className="font-medium text-gray-600 mb-1">الطلب غير موجود</p>
+            <p className="text-sm">تحقق من رقم الطلب أو عد للرئيسية</p>
           </div>
         )}
       </div>

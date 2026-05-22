@@ -15,6 +15,11 @@ export interface Brand_Key {
   __typename?: 'Brand_Key';
 }
 
+export interface FactoryIntelligence_Key {
+  id: UUIDString;
+  __typename?: 'FactoryIntelligence_Key';
+}
+
 export interface GetUserData {
   user?: {
     id: string;
@@ -170,3 +175,4 @@ export const listProductsRef: ListProductsRef;
 
 export function listProducts(options?: ExecuteQueryOptions): QueryPromise<ListProductsData, undefined>;
 export function listProducts(dc: DataConnect, options?: ExecuteQueryOptions): QueryPromise<ListProductsData, undefined>;
+

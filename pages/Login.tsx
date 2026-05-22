@@ -1,18 +1,17 @@
 import React, { useState } from 'react';
 import { useAuth } from '../store/AuthContext';
-import { Loader2, ArrowRight, Smartphone, ShieldCheck, Mail, Lock, User as UserIcon } from 'lucide-react';
+import { Loader2, Smartphone, Mail, Lock, User as UserIcon } from 'lucide-react';
 
 interface LoginProps {
   adminMode?: boolean;
 }
 
 export const Login: React.FC<LoginProps> = ({ adminMode = false }) => {
-  const { sendOtp, verifyOtp, loginWithEmail, isLoading, error } = useAuth();
-  const [step, setStep] = useState<'phone' | 'otp' | 'email-login'>(adminMode ? 'email-login' : 'phone');
+  const { registerAnonymous, loginWithEmail, isLoading, error } = useAuth();
+  const [step] = useState<'register' | 'email-login'>(adminMode ? 'email-login' : 'register');
 
   const [phone, setPhone] = useState('');
   const [name, setName] = useState('');
-  const [otp, setOtp] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
@@ -25,20 +24,14 @@ export const Login: React.FC<LoginProps> = ({ adminMode = false }) => {
   const isValidPhone = phone.length === 9 || (phone.length === 10 && phone.startsWith('0'));
   const isValidName = name.trim().length >= 2;
 
-  const handleSendOtp = async (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isValidPhone || !isValidName) return;
     try {
-      await sendOtp(phone, name.trim());
-      setStep('otp');
+      await registerAnonymous(name.trim(), phone);
     } catch {
       // error displayed via context state
     }
-  };
-
-  const handleVerify = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await verifyOtp(phone, otp);
   };
 
   const handleEmailLogin = async (e: React.FormEvent) => {
@@ -46,14 +39,14 @@ export const Login: React.FC<LoginProps> = ({ adminMode = false }) => {
     try { await loginWithEmail(email, password); } catch {}
   };
 
-  const renderHeader = () => {
-    const config = {
-      phone: { icon: <Smartphone size={32} />, title: 'تسجيل الدخول', subtitle: 'أدخل اسمك ورقم جوالك للمتابعة' },
-      otp:   { icon: <ShieldCheck size={32} />, title: 'تأكيد الرقم', subtitle: `تم إرسال رمز التحقق عبر واتسآب إلى ${phone}` },
-      'email-login': { icon: <Mail size={32} />, title: 'تسجيل دخول الإدارة', subtitle: 'للمستخدمين المعتمدين فقط' },
-    };
-    const { icon, title, subtitle } = config[step];
-    return (
+  const headerConfig = {
+    register: { icon: <Smartphone size={32} />, title: 'تسجيل الدخول', subtitle: 'أدخل اسمك ورقم جوالك للمتابعة' },
+    'email-login': { icon: <Mail size={32} />, title: 'تسجيل دخول الإدارة', subtitle: 'للمستخدمين المعتمدين فقط' },
+  };
+  const { icon, title, subtitle } = headerConfig[step];
+
+  return (
+    <div className="flex flex-col items-center justify-center p-6 bg-white rounded-2xl shadow-sm border border-gray-100 min-h-[400px]">
       <div className="mb-6 text-center">
         <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4 text-primary">
           {icon}
@@ -61,12 +54,6 @@ export const Login: React.FC<LoginProps> = ({ adminMode = false }) => {
         <h2 className="text-2xl font-bold text-gray-900 mb-2">{title}</h2>
         <p className="text-gray-500 text-sm">{subtitle}</p>
       </div>
-    );
-  };
-
-  return (
-    <div className="flex flex-col items-center justify-center p-6 bg-white rounded-2xl shadow-sm border border-gray-100 min-h-[400px]">
-      {renderHeader()}
 
       {error && (
         <div className="w-full bg-red-50 text-red-600 p-3 rounded-lg text-sm text-center font-medium mb-4">
@@ -74,9 +61,9 @@ export const Login: React.FC<LoginProps> = ({ adminMode = false }) => {
         </div>
       )}
 
-      {/* ── Phone + Name step ── */}
-      {step === 'phone' && (
-        <form onSubmit={handleSendOtp} className="w-full space-y-4">
+      {/* ── Name + Phone (customer onboarding) ── */}
+      {step === 'register' && (
+        <form onSubmit={handleRegister} className="w-full space-y-4">
           <div className="space-y-1">
             <label className="text-sm font-medium text-gray-700">الاسم الكريم</label>
             <div className="relative">
@@ -118,49 +105,12 @@ export const Login: React.FC<LoginProps> = ({ adminMode = false }) => {
             disabled={isLoading || !isValidPhone || !isValidName}
             className="w-full h-12 bg-primary text-white rounded-xl font-bold text-lg shadow-lg shadow-primary/30 flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-70 disabled:cursor-not-allowed"
           >
-            {isLoading ? <Loader2 className="animate-spin" /> : 'إرسال الرمز عبر واتسآب'}
+            {isLoading ? <Loader2 className="animate-spin" /> : 'متابعة'}
           </button>
         </form>
       )}
 
-      {/* ── OTP step ── */}
-      {step === 'otp' && (
-        <form onSubmit={handleVerify} className="w-full space-y-4">
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-gray-700">رمز التحقق</label>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={otp}
-              onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              className="w-full h-12 px-4 rounded-xl border border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all text-center text-2xl tracking-[1em] font-mono"
-              placeholder="------"
-              maxLength={6}
-              autoFocus
-              required
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={isLoading || otp.length < 6}
-            className="w-full h-12 bg-primary text-white rounded-xl font-bold text-lg shadow-lg shadow-primary/30 flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-70 disabled:cursor-not-allowed"
-          >
-            {isLoading ? <Loader2 className="animate-spin" /> : 'تحقق'}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => { setStep('phone'); setOtp(''); }}
-            className="w-full text-gray-500 text-sm py-2 flex items-center justify-center gap-1 hover:text-gray-700"
-          >
-            <ArrowRight size={14} />
-            تغيير رقم الجوال
-          </button>
-        </form>
-      )}
-
-      {/* ── Admin email-login step (adminMode only) ── */}
+      {/* ── Admin email-login (adminMode only) ── */}
       {step === 'email-login' && (
         <form onSubmit={handleEmailLogin} className="w-full space-y-4">
           <div className="space-y-1">

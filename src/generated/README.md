@@ -332,7 +332,9 @@ export interface ListProductsData {
         id: UUIDString;
         size: string;
         uom: string;
+        internalReference: string;
         stock: number;
+        isActive: boolean;
         tierPrices_on_sku: ({
           price: number;
           tier: {

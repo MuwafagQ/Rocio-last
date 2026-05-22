@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
-import { listProducts } from '@firebasegen/rocio-mobile-sdk-connector';
+import { getApp } from 'firebase/app';
+import { getDataConnect } from 'firebase/data-connect';
+import { connectorConfig, listProducts } from '@firebasegen/rocio-mobile-sdk-connector';
 import { useAuth } from './AuthContext';
 import { Product } from '../types';
 
@@ -29,7 +31,6 @@ const BRAND_ID_MAP: Record<string, string> = {
   'Aquafina': 'aquafina',
 };
 
-// Parse internal_reference like "NOVA-1.5L-C12" into packaging metadata
 function parseInternalReference(ref: string): {
   unitVolume: string;
   packagingType: 'CRT' | 'PCS' | 'DUM';
@@ -58,8 +59,8 @@ export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ child
     let active = true;
     (async () => {
       try {
-        // listProducts() uses connectorConfig internally — no explicit dc needed
-        const { data } = await listProducts();
+        const dc = getDataConnect(getApp(), connectorConfig);
+        const { data } = await listProducts(dc);
         if (active) {
           setRawData(data);
           setLoading(false);
@@ -81,9 +82,7 @@ export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (!rawData) return [];
     const flat: Product[] = [];
     for (const p of rawData.products ?? []) {
-      if (!p.isActive) continue;
       for (const sku of p.skus_on_product) {
-        if (!sku.isActive || sku.stock <= 0) continue;
         const price =
           sku.tierPrices_on_sku.find((tp: any) => tp.tier.name.toLowerCase() === tier)?.price ??
           sku.tierPrices_on_sku.find((tp: any) => tp.tier.name.toLowerCase() === 'standard')?.price ??
@@ -103,6 +102,7 @@ export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ child
           unitsPerPackage: parsed.unitsPerPackage,
           size: `${parsed.unitVolume || sku.size} x ${parsed.unitsPerPackage}`,
           internalReference: sku.internalReference ?? '',
+          stock: sku.stock,
           isSubscriptionAvailable: p.isSubscription,
           sodiumLevel: p.sodiumLevel ? parseFloat(p.sodiumLevel) : 0,
           phLevel: p.phLevel ? parseFloat(p.phLevel) : 7,
