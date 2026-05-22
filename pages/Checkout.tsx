@@ -459,8 +459,11 @@ export const Checkout: React.FC = () => {
       let responseData: any = {};
       try { const t = await response.text(); responseData = t ? JSON.parse(t) : {}; } catch {}
 
+      // n8n sometimes wraps response in an array — unwrap it
+      const rd = Array.isArray(responseData) ? responseData[0] : responseData;
+
       if (!response.ok) {
-        throw new Error(responseData.errorMessage || 'فشل في إتمام الطلب، يرجى المحاولة مرة أخرى');
+        throw new Error(rd?.errorMessage || rd?.message || 'فشل في إتمام الطلب، يرجى المحاولة مرة أخرى');
       }
 
       if (user?.id) {
@@ -469,8 +472,17 @@ export const Checkout: React.FC = () => {
         updateDoc(doc(db, 'users', user.id), { default_address: deliveryAddress }).catch(() => {});
       }
 
-      setPlacedOrderId(responseData?.order_id || 'ROCIO-0001');
-      localStorage.setItem('activeOrderId', responseData?.order_id || 'ROCIO-0001');
+      // Try every common field name n8n might use for the order ID
+      const resolvedOrderId =
+        rd?.order_id || rd?.orderId || rd?.id || rd?.data?.order_id || rd?.orderNumber;
+
+      if (!resolvedOrderId) {
+        console.error('[Checkout] create-order response missing order_id. Full payload:', responseData);
+        throw new Error('لم نتلق رقم الطلب من الخادم — يرجى التواصل مع الدعم');
+      }
+
+      setPlacedOrderId(resolvedOrderId);
+      localStorage.setItem('activeOrderId', resolvedOrderId);
       setOrderPlaced(true);
     } catch (error: any) {
       console.error('Checkout failed:', error);
