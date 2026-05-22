@@ -30,11 +30,12 @@ interface UseOrderStatusResult {
   cachedCustomerPhone: string | null;
 }
 
-export function useOrderStatus(orderId: string | null): UseOrderStatusResult {
+// refreshKey increment forces re-subscribe (used by pull-to-refresh)
+export function useOrderStatus(orderId: string | null, refreshKey = 0): UseOrderStatusResult {
   const [data, setData] = useState<OrderStatusData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  // Cached because RTDB node is replaced on each status change — customer_phone is gone after 'assigned'
+  // Cached because RTDB node is replaced on each write — customer_phone is gone after 'assigned'
   const phoneRef = useRef<string | null>(null);
   const [cachedCustomerPhone, setCachedCustomerPhone] = useState<string | null>(null);
 
@@ -72,7 +73,7 @@ export function useOrderStatus(orderId: string | null): UseOrderStatusResult {
     );
 
     return () => unsub();
-  }, [orderId]);
+  }, [orderId, refreshKey]);
 
   return { data, loading, error, cachedCustomerPhone };
 }

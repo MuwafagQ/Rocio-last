@@ -40,10 +40,28 @@ function statusToStepIdx(status: string | undefined): number {
 
 export const OrderTracking: React.FC<{ orderId: string; onDone: () => void; isCard?: boolean }> = ({ orderId, onDone, isCard }) => {
   const { user } = useAuth();
-  const { data, loading, error, cachedCustomerPhone } = useOrderStatus(orderId);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const { data, loading, error, cachedCustomerPhone } = useOrderStatus(orderId, refreshKey);
   const [pendingTooLong, setPendingTooLong] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [isPTRActive, setIsPTRActive] = useState(false);
   const pendingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchStartY = useRef(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const dy = e.changedTouches[0].clientY - touchStartY.current;
+    const atTop = (scrollRef.current?.scrollTop ?? 0) === 0;
+    if (dy > 70 && atTop) {
+      setIsPTRActive(true);
+      setRefreshKey(k => k + 1);
+      setTimeout(() => setIsPTRActive(false), 1200);
+    }
+  };
 
   // Show "جاري تعيين السائق…" hint if pending for more than 10s
   useEffect(() => {
@@ -97,7 +115,19 @@ export const OrderTracking: React.FC<{ orderId: string; onDone: () => void; isCa
         </div>
       )}
 
-      <div className={`flex-1 overflow-y-auto space-y-4 ${isCard ? 'py-2' : 'px-4 py-6'}`}>
+      <div
+        ref={scrollRef}
+        className={`flex-1 overflow-y-auto space-y-4 ${isCard ? 'py-2' : 'px-4 py-6'}`}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
+        {/* Pull-to-refresh indicator */}
+        {isPTRActive && (
+          <div className="flex items-center justify-center gap-2 py-2 text-primary text-sm">
+            <RefreshCw size={16} className="animate-spin" />
+            <span>جاري التحديث…</span>
+          </div>
+        )}
 
         {/* Failed delivery — red banner + retry */}
         {isFailed && (
