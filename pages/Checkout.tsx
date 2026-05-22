@@ -97,7 +97,7 @@ export const OrderTracking: React.FC<{ orderId: string; onDone: () => void; isCa
   const showDriverCard = (status === 'assigned') && data?.driver_name;
 
   return (
-    <div className={isCard ? 'flex flex-col bg-transparent' : 'h-screen flex flex-col bg-gray-50'}>
+    <div className={isCard ? 'flex flex-col bg-transparent' : 'flex flex-col bg-gray-50 min-h-screen pb-24'}>
       {!isCard && (
         <div className="bg-white px-4 pt-12 pb-6 shadow-sm text-center">
           <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3 ${isDelivered ? 'bg-green-100' : isFailed ? 'bg-red-100' : 'bg-primary/10'}`}>
@@ -111,15 +111,19 @@ export const OrderTracking: React.FC<{ orderId: string; onDone: () => void; isCa
             {isDelivered ? 'تم التوصيل بنجاح!' : isFailed ? 'تعذّر التوصيل' : 'تتبع طلبك'}
           </h2>
           <p className="text-sm text-gray-400 mt-1">رقم الطلب #{orderId}</p>
-          <p className="text-[10px] text-gray-300 mt-0.5 font-mono">
-            RTDB: order_status/{orderId} → {loading ? 'loading…' : error ? 'ERROR' : data ? data.status : 'null'}
-          </p>
+          {/* Connection status indicator */}
+          <div className="flex items-center justify-center gap-1.5 mt-2">
+            <span className={`w-2 h-2 rounded-full ${error ? 'bg-red-400' : loading ? 'bg-yellow-400 animate-pulse' : data ? 'bg-green-400 animate-pulse' : 'bg-gray-300'}`} />
+            <span className="text-[10px] font-mono text-gray-400">
+              {loading ? 'جاري الاتصال…' : error ? 'خطأ في الاتصال — راجع RTDB Rules' : data ? `متصل · ${data.status}` : 'لا توجد بيانات في المسار'}
+            </span>
+          </div>
         </div>
       )}
 
       <div
         ref={scrollRef}
-        className={`flex-1 overflow-y-auto space-y-4 ${isCard ? 'py-2' : 'px-4 py-6'}`}
+        className={`space-y-4 ${isCard ? 'py-2 overflow-y-auto' : 'px-4 py-6'}`}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
@@ -181,10 +185,29 @@ export const OrderTracking: React.FC<{ orderId: string; onDone: () => void; isCa
           </div>
         </div>
 
-        {/* Pending too long hint */}
+        {/* Pending state info card */}
+        {!loading && !error && status === 'pending' && (
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-start gap-3">
+            <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center shrink-0">
+              <Package size={20} className="text-primary" />
+            </div>
+            <div>
+              <p className="font-bold text-gray-800 text-sm mb-0.5">
+                {pendingTooLong ? 'جاري تعيين السائق…' : 'تم استلام طلبك'}
+              </p>
+              <p className="text-xs text-gray-500">
+                {pendingTooLong
+                  ? 'نعمل على تعيين أقرب سائق متاح. سيتم تحديث الحالة تلقائياً.'
+                  : 'طلبك قيد المعالجة. سيتم تعيين السائق خلال دقائق.'}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Pending too long extra hint */}
         {pendingTooLong && status === 'pending' && (
           <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-sm text-blue-600 text-center">
-            جاري تعيين السائق…
+            اسحب للأسفل للتحديث إذا لم تتغير الحالة
           </div>
         )}
 
@@ -279,7 +302,7 @@ export const OrderTracking: React.FC<{ orderId: string; onDone: () => void; isCa
       </div>
 
       {!isCard && (
-        <div className="bg-white px-4 pb-8 pt-4 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
+        <div className="px-4 pt-4">
           <button onClick={onDone} className="w-full bg-primary text-white py-3.5 rounded-xl font-bold active:scale-[0.98] transition-transform">
             العودة للرئيسية
           </button>
