@@ -414,14 +414,6 @@ export const Checkout: React.FC = () => {
         })),
       };
 
-      // Payload verification — remove before production
-      console.group('[Checkout] Order payload');
-      console.log('firebase_uid :', orderPayload.firebase_uid);
-      console.log('customer_id  :', orderPayload.customer_id);
-      console.log('items        :', orderPayload.items.map(i => `${i.product_id} x${i.quantity}`).join(', '));
-      console.log('full payload :', orderPayload);
-      console.groupEnd();
-
       const response = await fetch('https://n8n.srv1473225.hstgr.cloud/webhook/create-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
