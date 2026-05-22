@@ -31,10 +31,9 @@ const STEP_LABELS = [
 // 'assigned' conflates steps 1 and 2 (driver assigned + on the way) as we have no in_transit signal.
 function statusToStepIdx(status: string | undefined): number {
   switch (status) {
-    case 'pending':          return 0;
-    case 'assigned':         return 2; // lights steps 0, 1, 2
-    case 'delivered':        return 3; // all 4
-    default:                 return -1; // failed_delivery or loading → all gray
+    case 'assigned':  return 2; // lights steps 0, 1, 2
+    case 'delivered': return 3; // all 4
+    default:          return 0; // pending / null / unknown → always show step 1 minimum
   }
 }
 
@@ -94,8 +93,7 @@ export const OrderTracking: React.FC<{ orderId: string; onDone: () => void; isCa
   const status = data?.status;
   const isFailed = status === 'failed_delivery';
   const isDelivered = status === 'delivered';
-  // While loading/null: default to step 0 (pending) so the stepper is never fully dark
-  const stepIdx = loading ? 0 : statusToStepIdx(status);
+  const stepIdx = statusToStepIdx(status); // always ≥ 0 now
   const showDriverCard = (status === 'assigned') && data?.driver_name;
 
   return (
@@ -113,6 +111,9 @@ export const OrderTracking: React.FC<{ orderId: string; onDone: () => void; isCa
             {isDelivered ? 'تم التوصيل بنجاح!' : isFailed ? 'تعذّر التوصيل' : 'تتبع طلبك'}
           </h2>
           <p className="text-sm text-gray-400 mt-1">رقم الطلب #{orderId}</p>
+          <p className="text-[10px] text-gray-300 mt-0.5 font-mono">
+            RTDB: order_status/{orderId} → {loading ? 'loading…' : error ? 'ERROR' : data ? data.status : 'null'}
+          </p>
         </div>
       )}
 
