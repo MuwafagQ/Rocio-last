@@ -94,7 +94,8 @@ export const OrderTracking: React.FC<{ orderId: string; onDone: () => void; isCa
   const status = data?.status;
   const isFailed = status === 'failed_delivery';
   const isDelivered = status === 'delivered';
-  const stepIdx = statusToStepIdx(status);
+  // While loading/null: default to step 0 (pending) so the stepper is never fully dark
+  const stepIdx = loading ? 0 : statusToStepIdx(status);
   const showDriverCard = (status === 'assigned') && data?.driver_name;
 
   return (
@@ -184,10 +185,11 @@ export const OrderTracking: React.FC<{ orderId: string; onDone: () => void; isCa
           </div>
         )}
 
-        {/* RTDB connection error */}
+        {/* RTDB connection error — bright so we can distinguish "no data" from "rules blocked" */}
         {error && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-sm text-yellow-700 text-center">
-            تعذّر الاتصال بخدمة التتبع. ستصلك إشعارات واتسآب عند تعيين السائق.
+          <div className="bg-red-50 border-2 border-red-400 rounded-xl p-4 text-sm text-red-700 text-center font-bold">
+            ⚠️ تعذّر الاتصال بقاعدة بيانات التتبع
+            <p className="text-xs font-normal mt-1 text-red-500">قد تكون قواعد RTDB تمنع القراءة — راجع Firebase Console</p>
           </div>
         )}
 
