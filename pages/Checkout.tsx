@@ -123,6 +123,16 @@ export const OrderTracking: React.FC<{ orderId: string; onDone: () => void; isCa
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
+        {/* Order number shown in card mode (Profile page) */}
+        {isCard && (
+          <div className="px-4 pt-2 flex items-center justify-between">
+            <span className="text-xs text-gray-500 font-medium">رقم الطلب <span className="font-bold text-gray-700">#{orderId}</span></span>
+            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${status === 'delivered' ? 'bg-green-100 text-green-700' : status === 'failed_delivery' ? 'bg-red-100 text-red-700' : 'bg-primary/10 text-primary'}`}>
+              {status === 'delivered' ? 'مكتمل' : status === 'failed_delivery' ? 'فشل التوصيل' : status === 'assigned' ? 'السائق في الطريق' : 'جاري المعالجة'}
+            </span>
+          </div>
+        )}
+
         {/* Pull-to-refresh indicator */}
         {isPTRActive && (
           <div className="flex items-center justify-center gap-2 py-2 text-primary text-sm">
@@ -455,7 +465,7 @@ export const Checkout: React.FC = () => {
 
   if (orderPlaced) {
     return (
-      <div className="h-screen flex flex-col items-center justify-center p-8 text-center">
+      <div className="min-h-screen flex flex-col items-center justify-center p-8 pb-32 text-center">
         <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mb-6">
           <CheckCircle size={48} className="text-green-600" />
         </div>

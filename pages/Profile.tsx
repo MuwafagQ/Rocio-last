@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../store/AuthContext';
 import { Login } from './Login';
 import { OrderTracking } from './Checkout';
@@ -17,6 +17,15 @@ export const Profile: React.FC<ProfileProps> = ({ onGoToSupport }) => {
   const { user, logout } = useAuth();
   const [activeView, setActiveView] = useState<ProfileView>('main');
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setActiveOrderId(localStorage.getItem('activeOrderId'));
+    const interval = setInterval(() => {
+      setActiveOrderId(localStorage.getItem('activeOrderId'));
+    }, 2000);
+    return () => clearInterval(interval);
+  }, []);
 
   if (!user) {
     return (
@@ -149,17 +158,6 @@ export const Profile: React.FC<ProfileProps> = ({ onGoToSupport }) => {
   }
 
   // --- Main View ---
-
-  // Load active order state
-  const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
-
-  React.useEffect(() => {
-    setActiveOrderId(localStorage.getItem('activeOrderId'));
-    const interval = setInterval(() => {
-        setActiveOrderId(localStorage.getItem('activeOrderId'));
-    }, 2000);
-    return () => clearInterval(interval);
-  }, []);
 
   return (
     <div className="pb-24 pt-8 px-4 bg-gray-50 min-h-screen animate-in fade-in duration-300">
