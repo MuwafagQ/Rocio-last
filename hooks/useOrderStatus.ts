@@ -10,7 +10,7 @@ export interface OrderStatusData {
   customer_phone?: string;
   delivery_address?: string;
   odoo_order_id?: number;
-  last_updated_at?: number;
+  last_updated_at?: number | string; // n8n writes ISO string; handle both
   // assigned fields
   driver_id?: string;
   driver_name?: string;
@@ -20,7 +20,7 @@ export interface OrderStatusData {
   delivery_id?: string;
   // delivered / failed fields
   outcome?: string;
-  delivered_at?: number;
+  delivered_at?: number | string;
 }
 
 interface UseOrderStatusResult {
@@ -52,7 +52,15 @@ export function useOrderStatus(orderId: string | null, refreshKey = 0): UseOrder
     const unsub = onValue(
       statusRef,
       (snapshot) => {
-        const val = snapshot.val() as OrderStatusData | null;
+        let raw = snapshot.val();
+
+        // n8n jsonBody with JSON.stringify() double-serializes — RTDB stores a string.
+        // Parse it back to an object if needed.
+        if (typeof raw === 'string') {
+          try { raw = JSON.parse(raw); } catch { raw = null; }
+        }
+
+        const val = raw as OrderStatusData | null;
 
         if (val?.customer_phone && !phoneRef.current) {
           phoneRef.current = val.customer_phone;

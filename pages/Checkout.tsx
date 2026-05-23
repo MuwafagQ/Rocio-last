@@ -9,10 +9,13 @@ import { LocationPicker } from '../components/LocationPicker';
 import { VisualAddress } from '../components/VisualAddress';
 import { useOrderStatus } from '../hooks/useOrderStatus';
 
-// Maps last_updated_at (seconds or ms) to Arabic relative time string
-function relativeTime(ts: number | undefined): string {
+// Maps last_updated_at (unix seconds, unix ms, or ISO string) to Arabic relative time
+function relativeTime(ts: number | string | undefined): string {
   if (!ts) return '';
-  const ms = ts < 1e12 ? ts * 1000 : ts; // handle both unix-seconds and ms
+  const ms = typeof ts === 'string'
+    ? new Date(ts).getTime()
+    : ts < 1e12 ? ts * 1000 : ts;
+  if (!ms || isNaN(ms)) return '';
   const diff = Math.floor((Date.now() - ms) / 1000);
   const rtf = new Intl.RelativeTimeFormat('ar', { numeric: 'auto' });
   if (diff < 60) return rtf.format(-diff, 'second');
@@ -114,8 +117,8 @@ export const OrderTracking: React.FC<{ orderId: string; onDone: () => void; isCa
           {/* Connection status indicator */}
           <div className="flex items-center justify-center gap-1.5 mt-2">
             <span className={`w-2 h-2 rounded-full ${error ? 'bg-red-400' : loading ? 'bg-yellow-400 animate-pulse' : data ? 'bg-green-400 animate-pulse' : 'bg-gray-300'}`} />
-            <span className="text-[10px] font-mono text-gray-400">
-              {loading ? 'جاري الاتصال…' : error ? 'خطأ في الاتصال — راجع RTDB Rules' : data ? `متصل · ${data.status}` : 'لا توجد بيانات في المسار'}
+            <span className="text-[10px] font-mono text-gray-400 break-all px-2">
+              {loading ? 'جاري الاتصال…' : error ? 'خطأ في الاتصال — راجع RTDB Rules' : data ? JSON.stringify(data) : 'لا توجد بيانات في المسار'}
             </span>
           </div>
         </div>
