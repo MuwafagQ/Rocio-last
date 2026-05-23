@@ -2,17 +2,22 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useCart } from '../store/CartContext';
 import { useAuth } from '../store/AuthContext';
 import { Login } from './Login';
-import { TIME_SLOTS, VAT_RATE, DELIVERY_FEE, DONATION_PRODUCTS } from '../constants';
-import { StockPreference, SubscriptionFrequency } from '../types';
+import { TIME_SLOTS, VAT_RATE } from '../constants';
+import { SubscriptionFrequency } from '../types';
 import { Trash2, Calendar, Clock, MapPin, CheckCircle, Truck, Recycle, RefreshCw, ChevronDown, Heart, Plus, Package, CreditCard, Wallet, Navigation as NavigationIcon, User, AlertCircle, Zap, Phone, Star } from 'lucide-react';
-import { LocationPicker } from '../components/LocationPicker';
+import { GoogleMapsLocationPicker } from '../components/GoogleMapsLocationPicker';
 import { VisualAddress } from '../components/VisualAddress';
 import { useOrderStatus } from '../hooks/useOrderStatus';
+import { useShippingConfig } from '../hooks/useShippingConfig';
+import { computeShipping, haversineKm, isWithinOperatingHours } from '../utils/shipping';
 
-// Maps last_updated_at (seconds or ms) to Arabic relative time string
-function relativeTime(ts: number | undefined): string {
+// Maps last_updated_at (unix seconds, unix ms, or ISO string) to Arabic relative time
+function relativeTime(ts: number | string | undefined): string {
   if (!ts) return '';
-  const ms = ts < 1e12 ? ts * 1000 : ts; // handle both unix-seconds and ms
+  const ms = typeof ts === 'string'
+    ? new Date(ts).getTime()
+    : ts < 1e12 ? ts * 1000 : ts;
+  if (!ms || isNaN(ms)) return '';
   const diff = Math.floor((Date.now() - ms) / 1000);
   const rtf = new Intl.RelativeTimeFormat('ar', { numeric: 'auto' });
   if (diff < 60) return rtf.format(-diff, 'second');
@@ -31,10 +36,9 @@ const STEP_LABELS = [
 // 'assigned' conflates steps 1 and 2 (driver assigned + on the way) as we have no in_transit signal.
 function statusToStepIdx(status: string | undefined): number {
   switch (status) {
-    case 'pending':          return 0;
-    case 'assigned':         return 2; // lights steps 0, 1, 2
-    case 'delivered':        return 3; // all 4
-    default:                 return -1; // failed_delivery or loading → all gray
+    case 'assigned':  return 2; // lights steps 0, 1, 2
+    case 'delivered': return 3; // all 4
+    default:          return 0; // pending / null / unknown → always show step 1 minimum
   }
 }
 
@@ -94,11 +98,11 @@ export const OrderTracking: React.FC<{ orderId: string; onDone: () => void; isCa
   const status = data?.status;
   const isFailed = status === 'failed_delivery';
   const isDelivered = status === 'delivered';
-  const stepIdx = statusToStepIdx(status);
+  const stepIdx = statusToStepIdx(status); // always ≥ 0 now
   const showDriverCard = (status === 'assigned') && data?.driver_name;
 
   return (
-    <div className={isCard ? 'flex flex-col bg-transparent' : 'h-screen flex flex-col bg-gray-50'}>
+    <div className={isCard ? 'flex flex-col bg-transparent' : 'flex flex-col bg-gray-50 min-h-screen pb-24'}>
       {!isCard && (
         <div className="bg-white px-4 pt-12 pb-6 shadow-sm text-center">
           <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3 ${isDelivered ? 'bg-green-100' : isFailed ? 'bg-red-100' : 'bg-primary/10'}`}>
@@ -112,15 +116,32 @@ export const OrderTracking: React.FC<{ orderId: string; onDone: () => void; isCa
             {isDelivered ? 'تم التوصيل بنجاح!' : isFailed ? 'تعذّر التوصيل' : 'تتبع طلبك'}
           </h2>
           <p className="text-sm text-gray-400 mt-1">رقم الطلب #{orderId}</p>
+          {/* Connection status indicator */}
+          <div className="flex items-center justify-center gap-1.5 mt-2">
+            <span className={`w-2 h-2 rounded-full ${error ? 'bg-red-400' : loading ? 'bg-yellow-400 animate-pulse' : data ? 'bg-green-400 animate-pulse' : 'bg-gray-300'}`} />
+            <span className="text-[10px] font-mono text-gray-400 break-all px-2">
+              {loading ? 'جاري الاتصال…' : error ? 'خطأ في الاتصال — راجع RTDB Rules' : data ? JSON.stringify(data) : 'لا توجد بيانات في المسار'}
+            </span>
+          </div>
         </div>
       )}
 
       <div
         ref={scrollRef}
-        className={`flex-1 overflow-y-auto space-y-4 ${isCard ? 'py-2' : 'px-4 py-6'}`}
+        className={`space-y-4 ${isCard ? 'py-2 overflow-y-auto' : 'px-4 py-6'}`}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
+        {/* Order number shown in card mode (Profile page) */}
+        {isCard && (
+          <div className="px-4 pt-2 flex items-center justify-between">
+            <span className="text-xs text-gray-500 font-medium">رقم الطلب <span className="font-bold text-gray-700">#{orderId}</span></span>
+            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${status === 'delivered' ? 'bg-green-100 text-green-700' : status === 'failed_delivery' ? 'bg-red-100 text-red-700' : 'bg-primary/10 text-primary'}`}>
+              {status === 'delivered' ? 'مكتمل' : status === 'failed_delivery' ? 'فشل التوصيل' : status === 'assigned' ? 'السائق في الطريق' : 'جاري المعالجة'}
+            </span>
+          </div>
+        )}
+
         {/* Pull-to-refresh indicator */}
         {isPTRActive && (
           <div className="flex items-center justify-center gap-2 py-2 text-primary text-sm">
@@ -169,10 +190,29 @@ export const OrderTracking: React.FC<{ orderId: string; onDone: () => void; isCa
           </div>
         </div>
 
-        {/* Pending too long hint */}
+        {/* Pending state info card */}
+        {!loading && !error && status === 'pending' && (
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-start gap-3">
+            <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center shrink-0">
+              <Package size={20} className="text-primary" />
+            </div>
+            <div>
+              <p className="font-bold text-gray-800 text-sm mb-0.5">
+                {pendingTooLong ? 'جاري تعيين السائق…' : 'تم استلام طلبك'}
+              </p>
+              <p className="text-xs text-gray-500">
+                {pendingTooLong
+                  ? 'نعمل على تعيين أقرب سائق متاح. سيتم تحديث الحالة تلقائياً.'
+                  : 'طلبك قيد المعالجة. سيتم تعيين السائق خلال دقائق.'}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Pending too long extra hint */}
         {pendingTooLong && status === 'pending' && (
           <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-sm text-blue-600 text-center">
-            جاري تعيين السائق…
+            اسحب للأسفل للتحديث إذا لم تتغير الحالة
           </div>
         )}
 
@@ -184,10 +224,11 @@ export const OrderTracking: React.FC<{ orderId: string; onDone: () => void; isCa
           </div>
         )}
 
-        {/* RTDB connection error */}
+        {/* RTDB connection error — bright so we can distinguish "no data" from "rules blocked" */}
         {error && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-sm text-yellow-700 text-center">
-            تعذّر الاتصال بخدمة التتبع. ستصلك إشعارات واتسآب عند تعيين السائق.
+          <div className="bg-red-50 border-2 border-red-400 rounded-xl p-4 text-sm text-red-700 text-center font-bold">
+            ⚠️ تعذّر الاتصال بقاعدة بيانات التتبع
+            <p className="text-xs font-normal mt-1 text-red-500">قد تكون قواعد RTDB تمنع القراءة — راجع Firebase Console</p>
           </div>
         )}
 
@@ -266,7 +307,7 @@ export const OrderTracking: React.FC<{ orderId: string; onDone: () => void; isCa
       </div>
 
       {!isCard && (
-        <div className="bg-white px-4 pb-8 pt-4 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
+        <div className="px-4 pt-4">
           <button onClick={onDone} className="w-full bg-primary text-white py-3.5 rounded-xl font-bold active:scale-[0.98] transition-transform">
             العودة للرئيسية
           </button>
@@ -307,17 +348,23 @@ const CartItemImage = ({ item }: { item: any }) => {
 
 export const Checkout: React.FC = () => {
   const { user } = useAuth();
-  const { items, removeFromCart, updateQuantity, updateSubscriptionFrequency, subtotal, savings, clearCart, addToCart } = useCart();
+  const { items, removeFromCart, updateQuantity, updateSubscriptionFrequency, subtotal, savings, clearCart } = useCart();
+  const { config: shippingConfig } = useShippingConfig();
+
+  // All hooks before any conditional returns
   const [deliveryType, setDeliveryType] = useState<'urgent' | 'scheduled'>('scheduled');
   const [selectedDate, setSelectedDate] = useState<number>(0);
   const [selectedTime, setSelectedTime] = useState<string>('');
-  const [stockPref, setStockPref] = useState<StockPreference>(StockPreference.CALL_ME);
   const [recycling, setRecycling] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'applepay' | 'cod'>('card');
   const [visualDescription, setVisualDescription] = useState<string | null>(null);
   const [orderPlaced, setOrderPlaced] = useState(false);
   const [isLocationPickerOpen, setIsLocationPickerOpen] = useState(false);
   const [deliveryAddress, setDeliveryAddress] = useState(localStorage.getItem('user_location') || 'المنزل - الرياض، حي العليا 2344');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [placedOrderId, setPlacedOrderId] = useState<string | null>(null);
+  const [showTracking, setShowTracking] = useState(false);
 
   React.useEffect(() => {
     if (user?.id) {
@@ -351,48 +398,64 @@ export const Checkout: React.FC = () => {
   const getAddressCoords = (addr: string) => {
     try { const p = JSON.parse(addr); return { lat: p.lat, lng: p.lng }; } catch { return null; }
   };
-  const getDistanceFromLatLonInKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-    const R = 6371, dLat = (lat2 - lat1) * Math.PI / 180, dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  };
 
   const coords = getAddressCoords(deliveryAddress);
-  const distanceKm = coords?.lat && coords?.lng ? getDistanceFromLatLonInKm(24.7136, 46.6753, coords.lat, coords.lng) : 0;
-  const distanceFee = distanceKm > 5 ? Math.min(Math.round((distanceKm - 5) * 1.5), 100) : 0;
-
-  let calculatedDeliveryFee = DELIVERY_FEE;
-  if (deliveryType === 'urgent') {
-    calculatedDeliveryFee = 45 + distanceFee;
-  } else if (selectedDate === 0) {
-    calculatedDeliveryFee = (selectedTime === 'morning' ? 35 : selectedTime === 'afternoon' ? 30 : 25) + distanceFee;
-  } else if (selectedDate === 1) {
-    calculatedDeliveryFee = 20 + distanceFee;
-  } else {
-    calculatedDeliveryFee = 10 + Math.floor(distanceFee / 2);
-  }
-
-  const vatAmount = subtotal * VAT_RATE;
-  const total = subtotal + vatAmount + calculatedDeliveryFee;
+  const warehouseLat = shippingConfig?.warehouse.lat ?? 20.4922;
+  const warehouseLng = shippingConfig?.warehouse.lng ?? 44.8086;
+  const distanceKm = (coords?.lat && coords?.lng)
+    ? haversineKm(warehouseLat, warehouseLng, coords.lat, coords.lng)
+    : 0;
 
   const dates = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(); d.setDate(d.getDate() + i);
     return { dayName: d.toLocaleDateString('ar-SA', { weekday: 'short' }), dayNum: d.getDate(), fullDate: d };
   });
 
+  const now = new Date();
+  const selectedSlotDate = (() => {
+    const d = new Date(dates[selectedDate]?.fullDate ?? now);
+    const slot = TIME_SLOTS.find(s => s.id === selectedTime);
+    if (slot) {
+      const startH = parseInt(slot.range.split(' - ')[0].split(':')[0], 10);
+      d.setHours(startH, 0, 0, 0);
+    }
+    return d;
+  })();
+
+  const urgentAvailable = shippingConfig
+    ? shippingConfig.urgent_now_enabled && isWithinOperatingHours(shippingConfig)
+    : true; // optimistic before config loads
+
+  const calculatedDeliveryFee = (() => {
+    if (shippingConfig) {
+      const slot = deliveryType === 'urgent' ? now : selectedSlotDate;
+      return computeShipping(distanceKm, slot, now, shippingConfig);
+    }
+    // Fallback while config loads
+    const distanceFee = distanceKm > 5 ? Math.min(Math.round((distanceKm - 5) * 1.5), 100) : 0;
+    if (deliveryType === 'urgent') return 45 + distanceFee;
+    if (selectedDate === 0) return (selectedTime === 'morning' ? 35 : selectedTime === 'afternoon' ? 30 : 25) + distanceFee;
+    if (selectedDate === 1) return 20 + distanceFee;
+    return 10 + Math.floor(distanceFee / 2);
+  })();
+
+  const vatAmount = subtotal * VAT_RATE;
+  const total = subtotal + vatAmount + calculatedDeliveryFee;
+
   const handleLocationConfirm = (loc: string) => {
     setDeliveryAddress(loc); localStorage.setItem('user_location', loc); setIsLocationPickerOpen(false);
   };
-
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [placedOrderId, setPlacedOrderId] = useState<string | null>(null);
 
   const handleCheckout = async () => {
     setIsSubmitting(true);
     setSubmitError(null);
     try {
       const coords = getAddressCoords(deliveryAddress);
+      const slot = TIME_SLOTS.find(s => s.id === selectedTime);
+      const deliverySlot = deliveryType === 'urgent'
+        ? { type: 'urgent_now', scheduled_at: now.toISOString(), window_label: 'عاجل الآن' }
+        : { type: 'scheduled', scheduled_at: selectedSlotDate.toISOString(), window_label: `${slot?.label ?? ''} ${slot?.range ?? ''}`.trim() };
+
       const orderPayload = {
         firebase_uid: user.id,
         customer_id: user.phone || user.email || '',
@@ -403,24 +466,16 @@ export const Checkout: React.FC = () => {
         visual_description: visualDescription || '',
         payment_method: paymentMethod,
         delivery_type: deliveryType,
-        delivery_date: deliveryType === 'scheduled'
-          ? new Date(dates[selectedDate].fullDate).toISOString()
-          : new Date().toISOString(),
+        delivery_date: deliverySlot.scheduled_at,
         delivery_time: deliveryType === 'scheduled' ? selectedTime : 'now',
         delivery_fee: calculatedDeliveryFee,
+        delivery_slot: deliverySlot,
+        shipping_fee_sar: calculatedDeliveryFee,
         items: items.map(item => ({
           product_id: item.internalReference,
           quantity: item.quantity,
         })),
       };
-
-      // Payload verification — remove before production
-      console.group('[Checkout] Order payload');
-      console.log('firebase_uid :', orderPayload.firebase_uid);
-      console.log('customer_id  :', orderPayload.customer_id);
-      console.log('items        :', orderPayload.items.map(i => `${i.product_id} x${i.quantity}`).join(', '));
-      console.log('full payload :', orderPayload);
-      console.groupEnd();
 
       const response = await fetch('https://n8n.srv1473225.hstgr.cloud/webhook/create-order', {
         method: 'POST',
@@ -431,8 +486,11 @@ export const Checkout: React.FC = () => {
       let responseData: any = {};
       try { const t = await response.text(); responseData = t ? JSON.parse(t) : {}; } catch {}
 
+      // n8n sometimes wraps response in an array — unwrap it
+      const rd = Array.isArray(responseData) ? responseData[0] : responseData;
+
       if (!response.ok) {
-        throw new Error(responseData.errorMessage || 'فشل في إتمام الطلب، يرجى المحاولة مرة أخرى');
+        throw new Error(rd?.errorMessage || rd?.message || 'فشل في إتمام الطلب، يرجى المحاولة مرة أخرى');
       }
 
       if (user?.id) {
@@ -441,8 +499,17 @@ export const Checkout: React.FC = () => {
         updateDoc(doc(db, 'users', user.id), { default_address: deliveryAddress }).catch(() => {});
       }
 
-      setPlacedOrderId(responseData?.order_id || 'ROCIO-0001');
-      localStorage.setItem('activeOrderId', responseData?.order_id || 'ROCIO-0001');
+      // Try every common field name n8n might use for the order ID
+      const resolvedOrderId =
+        rd?.order_id || rd?.orderId || rd?.id || rd?.data?.order_id || rd?.orderNumber;
+
+      if (!resolvedOrderId) {
+        console.error('[Checkout] create-order response missing order_id. Full payload:', responseData);
+        throw new Error('لم نتلق رقم الطلب من الخادم — يرجى التواصل مع الدعم');
+      }
+
+      setPlacedOrderId(resolvedOrderId);
+      localStorage.setItem('activeOrderId', resolvedOrderId);
       setOrderPlaced(true);
     } catch (error: any) {
       console.error('Checkout failed:', error);
@@ -452,15 +519,13 @@ export const Checkout: React.FC = () => {
     }
   };
 
-  const [showTracking, setShowTracking] = useState(false);
-
   if (orderPlaced && showTracking && placedOrderId) {
     return <OrderTracking orderId={placedOrderId} onDone={() => { setOrderPlaced(false); setShowTracking(false); clearCart(); }} />;
   }
 
   if (orderPlaced) {
     return (
-      <div className="h-screen flex flex-col items-center justify-center p-8 text-center">
+      <div className="min-h-screen flex flex-col items-center justify-center p-8 pb-32 text-center">
         <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mb-6">
           <CheckCircle size={48} className="text-green-600" />
         </div>
@@ -501,7 +566,7 @@ export const Checkout: React.FC = () => {
 
   return (
     <div className="pb-[320px] pt-6 px-4 bg-gray-50 min-h-screen">
-      <LocationPicker isOpen={isLocationPickerOpen} onClose={() => setIsLocationPickerOpen(false)} onConfirm={handleLocationConfirm} initialLocation={deliveryAddress} />
+      <GoogleMapsLocationPicker isOpen={isLocationPickerOpen} onClose={() => setIsLocationPickerOpen(false)} onConfirm={handleLocationConfirm} initialLocation={deliveryAddress} />
 
       <h1 className="text-2xl font-bold text-gray-800 mb-6 px-2">ملخص الطلب</h1>
 
@@ -583,10 +648,20 @@ export const Checkout: React.FC = () => {
             <span className="font-bold text-sm">مجدول</span>
             <span className="text-[10px] opacity-80">توفير بالرسوم</span>
           </button>
-          <button onClick={() => setDeliveryType('urgent')} className={`flex-1 py-3 rounded-xl border-2 flex flex-col items-center justify-center gap-1 transition-all ${deliveryType === 'urgent' ? 'border-secondary bg-pink-50 text-secondary' : 'border-gray-100 bg-white text-gray-500'}`}>
+          <button
+            onClick={() => urgentAvailable && setDeliveryType('urgent')}
+            disabled={!urgentAvailable}
+            className={`flex-1 py-3 rounded-xl border-2 flex flex-col items-center justify-center gap-1 transition-all ${
+              !urgentAvailable
+                ? 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed'
+                : deliveryType === 'urgent'
+                ? 'border-secondary bg-pink-50 text-secondary'
+                : 'border-gray-100 bg-white text-gray-500'
+            }`}
+          >
             <Zap size={24} />
             <span className="font-bold text-sm">عاجل (الآن)</span>
-            <span className="text-[10px] opacity-80">توصيل فوراً</span>
+            <span className="text-[10px] opacity-80">{urgentAvailable ? 'توصيل فوراً' : 'غير متاح حالياً'}</span>
           </button>
         </div>
         {deliveryType === 'scheduled' && (

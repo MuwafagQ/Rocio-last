@@ -1,0 +1,10 @@
+{
+  "rules": {
+    "order_status": {
+      "$order_id": {
+        ".read": "auth != null",
+        ".write": false
+      }
+    }
+  }
+}

@@ -20,6 +20,29 @@ query ListBrands @auth(level: PUBLIC) {
   }
 }
 
+query GetUserOrdersPaginated($userId: String!, $limit: Int!, $offset: Int!) @auth(level: USER) {
+  orders(where: { user: { id: { eq: $userId } } }, orderBy: [{ createdAt: DESC }], limit: $limit, offset: $offset) {
+    id
+    status
+    totalAmount
+    deliveryAddress
+    createdAt
+    odooOrderId
+    orderItems_on_order {
+      quantity
+      priceAtPurchase
+      sku {
+        size
+        uom
+        product {
+          nameAr
+          imageUrl
+        }
+      }
+    }
+  }
+}
+
 query ListProducts @auth(level: PUBLIC) {
   products {
     id

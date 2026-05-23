@@ -11,12 +11,15 @@ interface CartContextType {
   clearCart: () => void;
   subtotal: number;
   savings: number;
+  outsideServiceArea: boolean;
+  setOutsideServiceArea: (val: boolean) => void;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [items, setItems] = useState<CartItem[]>([]);
+  const [outsideServiceArea, setOutsideServiceArea] = useState(false);
 
   const addToCart = (product: Product) => {
     setItems((prev) => {
@@ -85,16 +88,18 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   return (
     <CartContext.Provider
-      value={{ 
-        items, 
-        addToCart, 
-        removeFromCart, 
-        updateQuantity, 
-        toggleSubscription, 
+      value={{
+        items,
+        addToCart,
+        removeFromCart,
+        updateQuantity,
+        toggleSubscription,
         updateSubscriptionFrequency,
-        clearCart, 
+        clearCart,
         subtotal,
-        savings 
+        savings,
+        outsideServiceArea,
+        setOutsideServiceArea,
       }}
     >
       {children}

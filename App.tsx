@@ -14,15 +14,19 @@ import { ProductDetails } from './pages/ProductDetails';
 import { ERP } from './pages/ERP';
 import { Login } from './pages/Login';
 import { Support } from './pages/Support';
+import { Orders } from './pages/Orders';
 import { BottomNav } from './components/BottomNav';
-import { Tab, Product, BrandInfo } from './types';
+import { Tab, Product, BrandInfo, ShippingConfig } from './types';
 import { Loader2 } from 'lucide-react';
 import { SplashScreen } from './components/SplashScreen';
-import { LocationPicker } from './components/LocationPicker';
+import { GoogleMapsLocationPicker } from './components/GoogleMapsLocationPicker';
+import { haversineKm } from './utils/shipping';
+import { useCart } from './store/CartContext';
 
 const AppContent: React.FC = () => {
   const { isLoading: authLoading, user } = useAuth();
   const { loading: productsLoading } = useProducts();
+  const { outsideServiceArea, setOutsideServiceArea } = useCart();
   const [currentTab, setCurrentTab] = useState<Tab>(Tab.HOME);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedBrand, setSelectedBrand] = useState<BrandInfo | null>(null);
@@ -60,15 +64,16 @@ const AppContent: React.FC = () => {
   }, [authLoading, productsLoading]);
 
   useEffect(() => {
-    if (!showSplash && !globalAddress && !isHiddenRoute) {
+    if (!showSplash && !globalAddress && !isHiddenRoute && user) {
       setIsGlobalLocationPickerOpen(true);
     }
-  }, [showSplash, globalAddress, isHiddenRoute]);
+  }, [showSplash, globalAddress, isHiddenRoute, user]);
 
-  const handleGlobalLocationConfirm = (loc: string) => {
+  const handleGlobalLocationConfirm = async (loc: string) => {
     setGlobalAddress(loc);
     localStorage.setItem('user_location', loc);
     setIsGlobalLocationPickerOpen(false);
+
     if (user?.id) {
       import('firebase/firestore').then(({ doc, updateDoc }) => {
         import('./firebase').then(({ db }) => {
@@ -76,6 +81,21 @@ const AppContent: React.FC = () => {
         });
       });
     }
+
+    // Service area check
+    try {
+      const parsed = JSON.parse(loc);
+      if (parsed.lat && parsed.lng) {
+        const { doc, getDoc } = await import('firebase/firestore');
+        const { db } = await import('./firebase');
+        const snap = await getDoc(doc(db, 'config', 'shipping'));
+        if (snap.exists()) {
+          const cfg = snap.data() as ShippingConfig;
+          const dist = haversineKm(cfg.warehouse.lat, cfg.warehouse.lng, parsed.lat, parsed.lng);
+          setOutsideServiceArea(dist > cfg.service_radius_km);
+        }
+      }
+    } catch {}
   };
 
   const handleGoToCart = () => { setSelectedBrand(null); setSelectedProduct(null); setCurrentTab(Tab.CART); };
@@ -96,6 +116,8 @@ const AppContent: React.FC = () => {
         return <Profile onGoToSupport={() => setCurrentTab(Tab.SUPPORT)} />;
       case Tab.SUPPORT:
         return <Support onBack={() => setCurrentTab(Tab.HOME)} />;
+      case Tab.ORDERS:
+        return <Orders />;
       default:
         return <Home onGoToCart={() => setCurrentTab(Tab.CART)} onGoToProfile={() => setCurrentTab(Tab.PROFILE)} onGoToSupport={() => setCurrentTab(Tab.SUPPORT)} onProductClick={p => setSelectedProduct(p)} />;
     }
@@ -134,6 +156,11 @@ const AppContent: React.FC = () => {
 
     return (
       <>
+        {outsideServiceArea && (
+          <div className="bg-amber-500 text-white text-center text-xs font-bold py-2 px-4 z-40 sticky top-0">
+            أنت خارج منطقة الخدمة — يمكنك التصفح فقط
+          </div>
+        )}
         <main className="h-full overflow-y-auto no-scrollbar">{renderContent()}</main>
         <BottomNav currentTab={currentTab} onTabChange={setCurrentTab} />
       </>
@@ -144,11 +171,11 @@ const AppContent: React.FC = () => {
     <div className="max-w-md mx-auto bg-gray-100 min-h-screen relative shadow-2xl overflow-hidden font-sans">
       {showSplash && <SplashScreen isReady={isReady} onTransitionEnd={() => setShowSplash(false)} />}
       {!authLoading && !productsLoading && renderMainContent()}
-      <LocationPicker
+      <GoogleMapsLocationPicker
         isOpen={isGlobalLocationPickerOpen}
         onClose={() => setIsGlobalLocationPickerOpen(false)}
         onConfirm={handleGlobalLocationConfirm}
-        initialLocation={globalAddress || 'الرياض، المملكة العربية السعودية'}
+        initialLocation={globalAddress}
       />
     </div>
   );
