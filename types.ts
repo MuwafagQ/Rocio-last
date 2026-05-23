@@ -1,4 +1,20 @@
 
+export interface ShippingConfig {
+  base_fee_sar: number;
+  free_distance_km: number;
+  per_km_rate_sar: number;
+  warehouse: { lat: number; lng: number; label: string };
+  service_radius_km: number;
+  urgency_multipliers: {
+    urgent_now: number;
+    same_day_within_5h: number;
+    same_day_after_5h: number;
+    next_day_or_later: number;
+  };
+  operating_hours: { start: string; end: string; timezone: string };
+  urgent_now_enabled: boolean;
+}
+
 export interface Product {
   id: string;
   nameAr: string;
@@ -70,10 +86,11 @@ export enum StockPreference {
 export enum Tab {
   HOME = 'home',
   BRANDS = 'brands',
-  COMMUNITY = 'community', // Changed from PROMOTIONS
+  COMMUNITY = 'community',
   SUBSCRIPTIONS = 'subscriptions',
   CART = 'cart',
   PROFILE = 'profile',
   ERP = 'erp',
   SUPPORT = 'support',
+  ORDERS = 'orders',
 }

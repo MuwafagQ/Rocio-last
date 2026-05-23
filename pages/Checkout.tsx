@@ -2,12 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useCart } from '../store/CartContext';
 import { useAuth } from '../store/AuthContext';
 import { Login } from './Login';
-import { TIME_SLOTS, VAT_RATE, DELIVERY_FEE, DONATION_PRODUCTS } from '../constants';
-import { StockPreference, SubscriptionFrequency } from '../types';
+import { TIME_SLOTS, VAT_RATE } from '../constants';
+import { SubscriptionFrequency } from '../types';
 import { Trash2, Calendar, Clock, MapPin, CheckCircle, Truck, Recycle, RefreshCw, ChevronDown, Heart, Plus, Package, CreditCard, Wallet, Navigation as NavigationIcon, User, AlertCircle, Zap, Phone, Star } from 'lucide-react';
-import { LocationPicker } from '../components/LocationPicker';
+import { GoogleMapsLocationPicker } from '../components/GoogleMapsLocationPicker';
 import { VisualAddress } from '../components/VisualAddress';
 import { useOrderStatus } from '../hooks/useOrderStatus';
+import { useShippingConfig } from '../hooks/useShippingConfig';
+import { computeShipping, haversineKm, isWithinOperatingHours } from '../utils/shipping';
 
 // Maps last_updated_at (unix seconds, unix ms, or ISO string) to Arabic relative time
 function relativeTime(ts: number | string | undefined): string {
@@ -346,17 +348,23 @@ const CartItemImage = ({ item }: { item: any }) => {
 
 export const Checkout: React.FC = () => {
   const { user } = useAuth();
-  const { items, removeFromCart, updateQuantity, updateSubscriptionFrequency, subtotal, savings, clearCart, addToCart } = useCart();
+  const { items, removeFromCart, updateQuantity, updateSubscriptionFrequency, subtotal, savings, clearCart } = useCart();
+  const { config: shippingConfig } = useShippingConfig();
+
+  // All hooks before any conditional returns
   const [deliveryType, setDeliveryType] = useState<'urgent' | 'scheduled'>('scheduled');
   const [selectedDate, setSelectedDate] = useState<number>(0);
   const [selectedTime, setSelectedTime] = useState<string>('');
-  const [stockPref, setStockPref] = useState<StockPreference>(StockPreference.CALL_ME);
   const [recycling, setRecycling] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'applepay' | 'cod'>('card');
   const [visualDescription, setVisualDescription] = useState<string | null>(null);
   const [orderPlaced, setOrderPlaced] = useState(false);
   const [isLocationPickerOpen, setIsLocationPickerOpen] = useState(false);
   const [deliveryAddress, setDeliveryAddress] = useState(localStorage.getItem('user_location') || 'المنزل - الرياض، حي العليا 2344');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [placedOrderId, setPlacedOrderId] = useState<string | null>(null);
+  const [showTracking, setShowTracking] = useState(false);
 
   React.useEffect(() => {
     if (user?.id) {
@@ -390,48 +398,64 @@ export const Checkout: React.FC = () => {
   const getAddressCoords = (addr: string) => {
     try { const p = JSON.parse(addr); return { lat: p.lat, lng: p.lng }; } catch { return null; }
   };
-  const getDistanceFromLatLonInKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-    const R = 6371, dLat = (lat2 - lat1) * Math.PI / 180, dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  };
 
   const coords = getAddressCoords(deliveryAddress);
-  const distanceKm = coords?.lat && coords?.lng ? getDistanceFromLatLonInKm(24.7136, 46.6753, coords.lat, coords.lng) : 0;
-  const distanceFee = distanceKm > 5 ? Math.min(Math.round((distanceKm - 5) * 1.5), 100) : 0;
-
-  let calculatedDeliveryFee = DELIVERY_FEE;
-  if (deliveryType === 'urgent') {
-    calculatedDeliveryFee = 45 + distanceFee;
-  } else if (selectedDate === 0) {
-    calculatedDeliveryFee = (selectedTime === 'morning' ? 35 : selectedTime === 'afternoon' ? 30 : 25) + distanceFee;
-  } else if (selectedDate === 1) {
-    calculatedDeliveryFee = 20 + distanceFee;
-  } else {
-    calculatedDeliveryFee = 10 + Math.floor(distanceFee / 2);
-  }
-
-  const vatAmount = subtotal * VAT_RATE;
-  const total = subtotal + vatAmount + calculatedDeliveryFee;
+  const warehouseLat = shippingConfig?.warehouse.lat ?? 20.4922;
+  const warehouseLng = shippingConfig?.warehouse.lng ?? 44.8086;
+  const distanceKm = (coords?.lat && coords?.lng)
+    ? haversineKm(warehouseLat, warehouseLng, coords.lat, coords.lng)
+    : 0;
 
   const dates = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(); d.setDate(d.getDate() + i);
     return { dayName: d.toLocaleDateString('ar-SA', { weekday: 'short' }), dayNum: d.getDate(), fullDate: d };
   });
 
+  const now = new Date();
+  const selectedSlotDate = (() => {
+    const d = new Date(dates[selectedDate]?.fullDate ?? now);
+    const slot = TIME_SLOTS.find(s => s.id === selectedTime);
+    if (slot) {
+      const startH = parseInt(slot.range.split(' - ')[0].split(':')[0], 10);
+      d.setHours(startH, 0, 0, 0);
+    }
+    return d;
+  })();
+
+  const urgentAvailable = shippingConfig
+    ? shippingConfig.urgent_now_enabled && isWithinOperatingHours(shippingConfig)
+    : true; // optimistic before config loads
+
+  const calculatedDeliveryFee = (() => {
+    if (shippingConfig) {
+      const slot = deliveryType === 'urgent' ? now : selectedSlotDate;
+      return computeShipping(distanceKm, slot, now, shippingConfig);
+    }
+    // Fallback while config loads
+    const distanceFee = distanceKm > 5 ? Math.min(Math.round((distanceKm - 5) * 1.5), 100) : 0;
+    if (deliveryType === 'urgent') return 45 + distanceFee;
+    if (selectedDate === 0) return (selectedTime === 'morning' ? 35 : selectedTime === 'afternoon' ? 30 : 25) + distanceFee;
+    if (selectedDate === 1) return 20 + distanceFee;
+    return 10 + Math.floor(distanceFee / 2);
+  })();
+
+  const vatAmount = subtotal * VAT_RATE;
+  const total = subtotal + vatAmount + calculatedDeliveryFee;
+
   const handleLocationConfirm = (loc: string) => {
     setDeliveryAddress(loc); localStorage.setItem('user_location', loc); setIsLocationPickerOpen(false);
   };
-
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [placedOrderId, setPlacedOrderId] = useState<string | null>(null);
 
   const handleCheckout = async () => {
     setIsSubmitting(true);
     setSubmitError(null);
     try {
       const coords = getAddressCoords(deliveryAddress);
+      const slot = TIME_SLOTS.find(s => s.id === selectedTime);
+      const deliverySlot = deliveryType === 'urgent'
+        ? { type: 'urgent_now', scheduled_at: now.toISOString(), window_label: 'عاجل الآن' }
+        : { type: 'scheduled', scheduled_at: selectedSlotDate.toISOString(), window_label: `${slot?.label ?? ''} ${slot?.range ?? ''}`.trim() };
+
       const orderPayload = {
         firebase_uid: user.id,
         customer_id: user.phone || user.email || '',
@@ -442,11 +466,11 @@ export const Checkout: React.FC = () => {
         visual_description: visualDescription || '',
         payment_method: paymentMethod,
         delivery_type: deliveryType,
-        delivery_date: deliveryType === 'scheduled'
-          ? new Date(dates[selectedDate].fullDate).toISOString()
-          : new Date().toISOString(),
+        delivery_date: deliverySlot.scheduled_at,
         delivery_time: deliveryType === 'scheduled' ? selectedTime : 'now',
         delivery_fee: calculatedDeliveryFee,
+        delivery_slot: deliverySlot,
+        shipping_fee_sar: calculatedDeliveryFee,
         items: items.map(item => ({
           product_id: item.internalReference,
           quantity: item.quantity,
@@ -495,8 +519,6 @@ export const Checkout: React.FC = () => {
     }
   };
 
-  const [showTracking, setShowTracking] = useState(false);
-
   if (orderPlaced && showTracking && placedOrderId) {
     return <OrderTracking orderId={placedOrderId} onDone={() => { setOrderPlaced(false); setShowTracking(false); clearCart(); }} />;
   }
@@ -544,7 +566,7 @@ export const Checkout: React.FC = () => {
 
   return (
     <div className="pb-[320px] pt-6 px-4 bg-gray-50 min-h-screen">
-      <LocationPicker isOpen={isLocationPickerOpen} onClose={() => setIsLocationPickerOpen(false)} onConfirm={handleLocationConfirm} initialLocation={deliveryAddress} />
+      <GoogleMapsLocationPicker isOpen={isLocationPickerOpen} onClose={() => setIsLocationPickerOpen(false)} onConfirm={handleLocationConfirm} initialLocation={deliveryAddress} />
 
       <h1 className="text-2xl font-bold text-gray-800 mb-6 px-2">ملخص الطلب</h1>
 
@@ -626,10 +648,20 @@ export const Checkout: React.FC = () => {
             <span className="font-bold text-sm">مجدول</span>
             <span className="text-[10px] opacity-80">توفير بالرسوم</span>
           </button>
-          <button onClick={() => setDeliveryType('urgent')} className={`flex-1 py-3 rounded-xl border-2 flex flex-col items-center justify-center gap-1 transition-all ${deliveryType === 'urgent' ? 'border-secondary bg-pink-50 text-secondary' : 'border-gray-100 bg-white text-gray-500'}`}>
+          <button
+            onClick={() => urgentAvailable && setDeliveryType('urgent')}
+            disabled={!urgentAvailable}
+            className={`flex-1 py-3 rounded-xl border-2 flex flex-col items-center justify-center gap-1 transition-all ${
+              !urgentAvailable
+                ? 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed'
+                : deliveryType === 'urgent'
+                ? 'border-secondary bg-pink-50 text-secondary'
+                : 'border-gray-100 bg-white text-gray-500'
+            }`}
+          >
             <Zap size={24} />
             <span className="font-bold text-sm">عاجل (الآن)</span>
-            <span className="text-[10px] opacity-80">توصيل فوراً</span>
+            <span className="text-[10px] opacity-80">{urgentAvailable ? 'توصيل فوراً' : 'غير متاح حالياً'}</span>
           </button>
         </div>
         {deliveryType === 'scheduled' && (

@@ -12,7 +12,7 @@ interface ProductCardProps {
 }
 
 export const ProductCard: React.FC<ProductCardProps> = ({ product, onProductClick, isGrouped = false }) => {
-  const { items, addToCart, updateQuantity, toggleSubscription } = useCart();
+  const { items, addToCart, updateQuantity, toggleSubscription, outsideServiceArea } = useCart();
   const { products: MOCK_PRODUCTS } = useProducts();
   const [imgError, setImgError] = useState(false);
   
@@ -27,6 +27,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onProductClic
   const quantity = cartItem?.quantity || 0;
   const isSubscribed = cartItem?.isSubscribed || false;
   const isOutOfStock = product.stock !== undefined && product.stock === 0;
+  const addBlocked = outsideServiceArea || isOutOfStock;
 
   const handleCardClick = () => {
     if (onProductClick) {
@@ -168,6 +169,14 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onProductClic
                         className="w-full py-2 rounded-lg font-bold text-sm flex items-center justify-center gap-2 bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed"
                     >
                         <span>طلب مسبق</span>
+                    </button>
+                ) : outsideServiceArea ? (
+                    <button
+                        disabled
+                        title="هذه المنطقة خارج نطاق التوصيل حالياً"
+                        className="w-full py-2 rounded-lg font-bold text-sm flex items-center justify-center gap-2 bg-amber-50 text-amber-600 border border-amber-200 cursor-not-allowed"
+                    >
+                        <span>خارج نطاق التوصيل</span>
                     </button>
                 ) : quantity === 0 || hasVariants ? (
                     <button
