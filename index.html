@@ -3,39 +3,89 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Store DB Water Delivery</title>
+    <meta name="theme-color" content="#1245C5" />
+    <meta name="description" content="روسيِّو — توصيل المياه النقية في وادي الدواسر. اطلب الآن واستلم خلال ساعات." />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>روسيِّو | Rocío — توصيل المياه</title>
+
+    <!-- Google Fonts: Cairo (Arabic) + Inter (Latin) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
         theme: {
           extend: {
             colors: {
-              primary: '#183ac2',
-              secondary: '#c2187b',
-              surface: '#f3f4f6',
+              /* ── Rocío Brand Palette — Desert Dew ── */
+              primary:        '#1245C5', /* Rocío Blue  — trust, depth      */
+              'primary-dark': '#071952', /* Ocean Deep  — authority, premium */
+              'primary-light':'#4B73E6', /* Horizon     — fresh, approachable*/
+              secondary:      '#D4186A', /* Desert Rose — energy, warmth     */
+              aqua:           '#00B8D9', /* Morning Dew — purity, freshness  */
+              gold:           '#F59E0B', /* Desert Sand — premium, warmth    */
+              surface:        '#F5F8FF', /* Pearl White — clean, pure        */
+              mist:           '#EAF2FF', /* Dawn Mist   — soft backgrounds   */
             },
             fontFamily: {
-              sans: ['Segoe UI', 'Tahoma', 'Geneva', 'Verdana', 'sans-serif'],
-            }
+              sans:  ['Cairo', 'Inter', 'Segoe UI', 'Tahoma', 'sans-serif'],
+              latin: ['Inter', 'Segoe UI', 'sans-serif'],
+              arabic:['Cairo', 'sans-serif'],
+            },
+            borderRadius: {
+              '3xl': '1.5rem',
+              '4xl': '2rem',
+            },
+            boxShadow: {
+              'primary':   '0 10px 30px rgba(18, 69, 197, 0.30)',
+              'secondary': '0 10px 30px rgba(212, 24, 106, 0.30)',
+              'card':      '0 4px 20px rgba(0, 0, 0, 0.08)',
+              'aqua':      '0 10px 30px rgba(0, 184, 217, 0.25)',
+            },
           }
         }
       }
     </script>
     <style>
-      /* Hide scrollbar for horizontal scrolling areas */
-      .no-scrollbar::-webkit-scrollbar {
-        display: none;
+      /* ── Scrollbar ── */
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+      /* ── Rocío Brand Gradients ── */
+      .bg-rocio-splash {
+        background: linear-gradient(160deg, #071952 0%, #1245C5 55%, #00B8D9 100%);
       }
-      .no-scrollbar {
-        -ms-overflow-style: none;
-        scrollbar-width: none;
+      .bg-rocio-header {
+        background: linear-gradient(135deg, #1245C5 0%, #071952 100%);
       }
+      .bg-rocio-aqua {
+        background: linear-gradient(135deg, #00B8D9 0%, #1245C5 100%);
+      }
+
+      /* ── Smooth animations ── */
+      @keyframes dropFall {
+        0%   { transform: translateY(-8px); opacity: 0; }
+        100% { transform: translateY(0);    opacity: 1; }
+      }
+      @keyframes shimmer {
+        0%   { opacity: 0.4; }
+        50%  { opacity: 0.9; }
+        100% { opacity: 0.4; }
+      }
+      .animate-drop  { animation: dropFall 0.8s ease-out forwards; }
+      .animate-shimmer { animation: shimmer 2.5s ease-in-out infinite; }
     </style>
-<link rel="stylesheet" href="/index.css">
-</head>
-  <body class="bg-gray-100 text-slate-800 antialiased overflow-x-hidden selection:bg-secondary selection:text-white">
+    <link rel="stylesheet" href="/index.css">
+  </head>
+  <body class="bg-surface text-slate-800 antialiased overflow-x-hidden selection:bg-secondary selection:text-white">
     <div id="root"></div>
     <div id="recaptcha-container"></div>
-  <script type="module" src="/index.tsx"></script>
-</body>
+    <script type="module" src="/index.tsx"></script>
+  </body>
 </html>

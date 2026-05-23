@@ -1,55 +1,139 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 
-interface SplashScreenProps {
-  isReady: boolean;
-  onTransitionEnd: () => void;
-}
+const SPARK = 'M18 72 C10 58,14 36,30 22 C46 8,66 10,76 26 C84 38,80 54,66 62 C54 68,36 62,28 70 C24 74,22 80,18 72Z';
 
-export const SplashScreen: React.FC<SplashScreenProps> = ({ isReady, onTransitionEnd }) => {
-  const [isFadingOut, setIsFadingOut] = useState(false);
+const SplashScreen: React.FC = () => (
+  <div style={{
+    position:       'fixed',
+    inset:          0,
+    background:     'linear-gradient(160deg, #071952 0%, #1245C5 55%, #00B8D9 100%)',
+    display:        'flex',
+    flexDirection:  'column',
+    alignItems:     'center',
+    justifyContent: 'center',
+    zIndex:         9999,
+    overflow:       'hidden',
+  }}>
 
-  useEffect(() => {
-    if (isReady) {
-      setIsFadingOut(true);
-      const timer = setTimeout(() => {
-        onTransitionEnd();
-      }, 800); // 800ms fade out
-      return () => clearTimeout(timer);
-    }
-  }, [isReady, onTransitionEnd]);
+    <div style={{
+      position: 'absolute', bottom: -60, left: -60,
+      width: 260, height: 260, borderRadius: '50%',
+      background: 'rgba(0,184,217,0.14)', pointerEvents: 'none',
+    }} />
+    <div style={{
+      position: 'absolute', top: -40, right: -40,
+      width: 180, height: 180, borderRadius: '50%',
+      background: 'rgba(255,255,255,0.05)', pointerEvents: 'none',
+    }} />
 
-  return (
-    <div 
-      className={`fixed inset-0 z-50 flex items-center justify-center bg-white transition-opacity duration-700 ease-in-out ${
-        isFadingOut ? 'opacity-0' : 'opacity-100'
-      }`}
-    >
-      <div className="flex flex-col items-center justify-center animate-pulse">
-        <svg width="120" height="120" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-          {/* Dewdrop Element */}
-          <path 
-            d="M50 10 C50 10, 20 45, 20 65 C20 81.5685, 33.4315 95, 50 95 C66.5685 95, 80 81.5685, 80 65 C80 45, 50 10, 50 10 Z" 
-            fill="url(#waterGradient)" 
-          />
-          {/* Inner highlight for 3D effect */}
-          <path 
-            d="M50 25 C50 25, 30 50, 30 65 C30 76.0457, 38.9543 85, 50 85 C61.0457 85, 70 76.0457, 70 65 C70 50, 50 25, 50 25 Z" 
-            fill="#FFFFFF" 
-            opacity="0.2" 
-          />
-          {/* Small reflection */}
-          <ellipse cx="35" cy="65" rx="5" ry="10" transform="rotate(-45 35 65)" fill="#FFFFFF" opacity="0.4" />
-          <defs>
-            <linearGradient id="waterGradient" x1="50" y1="10" x2="50" y2="95" gradientUnits="userSpaceOnUse">
-              <stop stopColor="#87CEEB" /> {/* Sky Blue */}
-              <stop offset="1" stopColor="#000080" /> {/* Deep Navy */}
-            </linearGradient>
-          </defs>
-        </svg>
-        <h1 className="mt-6 text-4xl font-bold tracking-widest" style={{ color: '#000080', fontFamily: 'system-ui, sans-serif' }}>
-          Rocío
-        </h1>
-      </div>
+    <svg width="88" height="88" viewBox="0 0 100 100" fill="none"
+         style={{ position: 'relative', zIndex: 1 }}>
+      <rect x="4" y="4" width="92" height="92" rx="22" fill="url(#splashGrad)" />
+      <g transform="translate(12 14) scale(0.8)">
+        <path d={SPARK} fill="#D4186A" />
+      </g>
+      <defs>
+        <linearGradient id="splashGrad" x1="4" y1="4" x2="96" y2="96" gradientUnits="userSpaceOnUse">
+          <stop offset="0%"   stopColor="rgba(255,255,255,0.25)" />
+          <stop offset="100%" stopColor="rgba(255,255,255,0.08)" />
+        </linearGradient>
+      </defs>
+    </svg>
+
+    {/* wordmark: Roc + spark-dotted ı + o */}
+    <div style={{
+      display:    'inline-flex',
+      alignItems: 'baseline',
+      marginTop:  24,
+      paddingTop: 20,
+      position:   'relative',
+      zIndex:     1,
+    }}>
+      {(['Roc', null, 'o'] as const).map((seg, idx) =>
+        seg !== null ? (
+          <span key={idx} style={{
+            fontFamily:    "'Inter', sans-serif",
+            fontWeight:    800,
+            fontSize:      '2.6rem',
+            letterSpacing: '0.12em',
+            color:         '#fff',
+            lineHeight:    1,
+          }}>{seg}</span>
+        ) : (
+          <span key={idx} style={{ position: 'relative', display: 'inline-block', lineHeight: 1 }}>
+            <span style={{
+              fontFamily:    "'Inter', sans-serif",
+              fontWeight:    800,
+              fontSize:      '2.6rem',
+              letterSpacing: '0.12em',
+              color:         '#fff',
+              lineHeight:    1,
+            }}>&#x131;</span>
+            <svg
+              style={{
+                position:      'absolute',
+                left:          '50%',
+                top:           -11,
+                transform:     'translateX(-50%)',
+                display:       'block',
+                pointerEvents: 'none',
+              }}
+              width="18"
+              height="18"
+              viewBox="0 5 100 80"
+              fill="none"
+            >
+              <path d={SPARK} fill="#D4186A" />
+            </svg>
+          </span>
+        )
+      )}
     </div>
-  );
-};
+
+    <div style={{
+      fontFamily:    "'Cairo', sans-serif",
+      fontWeight:    500,
+      fontSize:      '1.1rem',
+      color:         'rgba(255,255,255,0.58)',
+      marginTop:     6,
+      letterSpacing: '0.06em',
+      direction:     'rtl',
+      position:      'relative',
+      zIndex:        1,
+    }}>
+      &#x631;&#x648;&#x633;&#x64A;&#x650;&#x651;&#x648;
+    </div>
+
+    <div style={{
+      display:    'flex',
+      alignItems: 'center',
+      gap:        10,
+      marginTop:  14,
+      position:   'relative',
+      zIndex:     1,
+    }}>
+      <div style={{ width: 28, height: 1, background: 'rgba(255,255,255,0.22)' }} />
+      <div style={{
+        fontFamily:    "'Inter', sans-serif",
+        fontSize:      '0.56rem',
+        letterSpacing: '0.22em',
+        color:         'rgba(255,255,255,0.38)',
+        textTransform: 'uppercase',
+      }}>
+        Commerce · Intelligence
+      </div>
+      <div style={{ width: 28, height: 1, background: 'rgba(255,255,255,0.22)' }} />
+    </div>
+
+    <div style={{ display: 'flex', gap: 6, marginTop: 52, position: 'relative', zIndex: 1 }}>
+      {[0, 1, 2].map(i => (
+        <div key={i} style={{
+          width: 6, height: 6, borderRadius: '50%',
+          background: i === 1 ? 'rgba(255,255,255,0.80)' : 'rgba(255,255,255,0.40)',
+        }} />
+      ))}
+    </div>
+  </div>
+);
+
+export default SplashScreen;
