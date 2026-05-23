@@ -54,9 +54,13 @@ export function useOrderStatus(orderId: string | null, refreshKey = 0): UseOrder
       (snapshot) => {
         let raw = snapshot.val();
 
-        // n8n jsonBody with JSON.stringify() double-serializes — RTDB stores a string.
-        // Parse it back to an object if needed.
-        if (typeof raw === 'string') {
+        // WF#3 sends bodyParameters with name="body", so Firebase stores:
+        // { body: "{\"status\":\"assigned\",...}" } instead of the object directly.
+        // Unwrap and parse either shape.
+        if (raw && typeof raw === 'object' && typeof raw.body === 'string') {
+          try { raw = JSON.parse(raw.body); } catch { raw = null; }
+        } else if (typeof raw === 'string') {
+          // WF#1 double-serializes via JSON.stringify inside jsonBody
           try { raw = JSON.parse(raw); } catch { raw = null; }
         }
 
