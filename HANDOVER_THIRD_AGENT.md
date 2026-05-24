@@ -329,22 +329,76 @@ If anything in the RTDB schema doesn't match what's actually written when you te
 - ✅ Out-of-stock UI shipped
 - ✅ Anonymous auth migration shipped (`534eb65`, `00fc1c8`)
 - ✅ `dataconnect/schema/schema.gql` committed
-- ⬜ Live tracking page subscribed to RTDB *(this is your task)*
-- ⬜ End-to-end order flow smoke test (Agent #2's planned QA)
+- ✅ Live tracking page subscribed to RTDB — `useOrderStatus` hook, 4-step stepper, driver card, pull-to-refresh, `failed_delivery` retry (`9bd4313`)
+- ✅ Google Maps location picker — replaces Leaflet; service-area gate; `outsideServiceArea` in CartContext (`9bd4313`)
+- ✅ Live shipping pricing — `useShippingConfig` + `computeShipping` + `isWithinOperatingHours`; urgent gate; `delivery_slot` + `shipping_fee_sar` in create-order payload (`9bd4313`)
+- ✅ Orders history screen — `pages/Orders.tsx`; active RTDB order + paginated DataConnect past orders (`9bd4313`)
+- ✅ `BottomNav` "طلباتي" tab (`9bd4313`)
+- ✅ `firebase.ts` exports `rtdb`; `firebase-applet-config.json` has `databaseURL` placeholder; RTDB rules committed (`database.rules.json`)
+- ✅ `store/AuthContext.tsx` calls `/webhook/register-user` after anonymous signup
+- ✅ `firestore.rules` — added `/config/{docId}` read rule for authenticated users (P0 fix for `useShippingConfig`)
+- ⬜ Firestore `/config/shipping` doc needs to be created — script at `scripts/seed-shipping-config.js`
+- ⬜ Google Maps API key in `.env` (user action — see `.env.example`)
+- ⬜ WF#1 accept `delivery_slot` + `shipping_fee_sar` — see §11 below
+- ⬜ WF3-Clean activate (user mid-import; Cowork handed off)
+- ⬜ `telegram_username` column in drivers sheet
+- ⬜ Admin Telegram chat ID (user creates group, captures ID)
+- ⬜ `firestore.rules` deploy (`firebase deploy --only firestore:rules`) — CI doesn't do this
+- ⬜ End-to-end order flow smoke test
 - ⬜ Phase B — CI auto-deploys DataConnect
 - ⬜ App-Mutations-Spec — Profile / Favorites / Reviews
 - ⬜ Restore OTP via Cloud Function token minting (once Meta approves)
 
 ## 9. Open tech debt
 
-- **Firestore rules deployment is manual.** CI deploys hosting only. `firestore.rules` may be ahead of what's actually live.
-- **RTDB rules are unknown** — not in the repo. Audit needed.
-- **Anonymous Auth toggle** in Firebase Console may not be enabled — if `auth/operation-not-allowed` appears in registration error, that's why.
+- **Firestore rules deployment is manual.** CI deploys hosting only. `firestore.rules` may be ahead of what's actually live. Run `firebase deploy --only firestore:rules` from a dev machine after any rules change.
+- **RTDB rules** — committed to `database.rules.json` (authenticated read, no client write on `order_status/*`). Deploy with `firebase deploy --only database` (use `firebase.cmd` on Windows to avoid PowerShell execution policy issues).
+- **Anonymous Auth toggle** in Firebase Console may not be enabled — if `auth/operation-not-allowed` appears in registration error, that's why (Firebase Console → Auth → Sign-in method → Anonymous).
 - **`signInWithCustomToken` is still imported in n8n's verify-otp** even though OTP is parked. App side cleaned up; backend side parked workflows still reference it.
-- **`Checkout.tsx` is 700+ lines, two concerns.** `OrderTracking` should be extracted (you'll do this as part of §7).
+- **`Checkout.tsx` is 700+ lines, two concerns.** `OrderTracking` should be extracted to its own file in a future cleanup pass.
 - **`MOCK_PRODUCTS` in `constants.ts`** is dead code merged with the live catalog in `Home.tsx` — harmless but should be deleted in a cleanup pass.
 - **DataConnect deploys are manual** from a developer machine; CI doesn't run them.
 - **Pre-order endpoint** referenced by the disabled `طلب مسبق` button doesn't exist yet.
+- **`GetUserOrdersPaginated` query** added to `queries.gql` but not yet deployed to DataConnect. Run `firebase deploy --only dataconnect` from dev machine.
+- **Body-unwrap in `useOrderStatus.ts`** — TODO comment: remove after 2026-07-01 once WF#3 is updated to use jsonBody instead of bodyParameters.
+- **`VITE_GOOGLE_MAPS_API_KEY` must be set in `.env`** — see `.env.example`. Currently shows "مفتاح Google Maps غير مُعيَّن" fallback in location picker if missing.
+
+## 11. WF#1 changes needed (delivery_slot + shipping_fee_sar)
+
+The app now sends two additional fields in the `/create-order` payload. WF#1 currently drops them. Changes needed in n8n:
+
+### In WF#1 "Validate Input" (or equivalent Input node):
+
+Accept these new optional fields without erroring:
+```
+delivery_slot: { type, scheduled_at, window_label }
+shipping_fee_sar: number
+```
+
+### Forward to Odoo sale.order:
+
+Option A (recommended — no Odoo schema change): append to the order's internal `note` field:
+```
+Delivery slot: {{ $json.body.delivery_slot.window_label }} ({{ $json.body.delivery_slot.scheduled_at }})
+Shipping fee: {{ $json.body.shipping_fee_sar }} SAR
+```
+
+Option B: create a shipping line item on the sale.order with a "Shipping" product in Odoo, `price_unit = shipping_fee_sar`.
+
+### Forward to WF#3:
+
+In the HTTP Request node that POSTs to `/webhook/delivery-trigger`, add to the body:
+```json
+{
+  "order_id": "...",
+  "customer_id": "...",
+  "delivery_address": "...",
+  "delivery_slot": "{{ $json.body.delivery_slot }}",
+  "shipping_fee_sar": "{{ $json.body.shipping_fee_sar }}"
+}
+```
+
+WF#3 can then show the delivery window in the driver's Telegram notification.
 
 ---
 
