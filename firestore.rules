@@ -59,6 +59,15 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    // ── App Config ─────────────────────────────────────────────────────────
+    // /config/shipping holds delivery fee params. Readable by authenticated
+    // users; never writable from the client (Admin SDK / n8n sets it).
+
+    match /config/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
     // ── Products & Brands ──────────────────────────────────────────────────
     // Public catalogue — read by anyone, write by admin only.
 
