@@ -25,6 +25,7 @@ admin.initializeApp({
 });
 
 const db = admin.firestore();
+db.settings({ databaseId: 'rocio-firestore' });
 
 const CONFIG = {
   base_fee_sar: 7,
