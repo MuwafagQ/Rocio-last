@@ -32,6 +32,18 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ isReady, onTransitio
       <div className="relative z-10 animate-drop flex flex-col items-center">
         <RocioLogo variant="full" theme="dark" size={92} showArabic />
       </div>
+      <div style={{ width: 28, height: 1, background: 'rgba(255,255,255,0.22)' }} />
     </div>
-  );
-};
+
+    <div style={{ display: 'flex', gap: 6, marginTop: 52, position: 'relative', zIndex: 1 }}>
+      {[0, 1, 2].map(i => (
+        <div key={i} style={{
+          width: 6, height: 6, borderRadius: '50%',
+          background: i === 1 ? 'rgba(255,255,255,0.80)' : 'rgba(255,255,255,0.40)',
+        }} />
+      ))}
+    </div>
+  </div>
+);
+
+export default SplashScreen;
