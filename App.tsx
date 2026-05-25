@@ -103,7 +103,7 @@ const AppContent: React.FC = () => {
   const renderContent = () => {
     switch (currentTab) {
       case Tab.HOME:
-        return <Home onGoToCart={() => setCurrentTab(Tab.CART)} onGoToProfile={() => setCurrentTab(Tab.PROFILE)} onGoToSupport={() => setCurrentTab(Tab.SUPPORT)} onProductClick={p => setSelectedProduct(p)} />;
+        return <Home onGoToCart={() => setCurrentTab(Tab.CART)} onGoToProfile={() => setCurrentTab(Tab.PROFILE)} onGoToSupport={() => setCurrentTab(Tab.SUPPORT)} onProductClick={p => setSelectedProduct(p)} globalAddress={globalAddress} onOpenLocationPicker={() => setIsGlobalLocationPickerOpen(true)} />;
       case Tab.BRANDS:
         return <Brands onBrandClick={b => setSelectedBrand(b)} onGoToCart={() => setCurrentTab(Tab.CART)} />;
       case Tab.COMMUNITY:
@@ -119,7 +119,7 @@ const AppContent: React.FC = () => {
       case Tab.ORDERS:
         return <Orders />;
       default:
-        return <Home onGoToCart={() => setCurrentTab(Tab.CART)} onGoToProfile={() => setCurrentTab(Tab.PROFILE)} onGoToSupport={() => setCurrentTab(Tab.SUPPORT)} onProductClick={p => setSelectedProduct(p)} />;
+        return <Home onGoToCart={() => setCurrentTab(Tab.CART)} onGoToProfile={() => setCurrentTab(Tab.PROFILE)} onGoToSupport={() => setCurrentTab(Tab.SUPPORT)} onProductClick={p => setSelectedProduct(p)} globalAddress={globalAddress} onOpenLocationPicker={() => setIsGlobalLocationPickerOpen(true)} />;
     }
   };
 

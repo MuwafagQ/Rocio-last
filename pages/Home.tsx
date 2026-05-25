@@ -1,11 +1,10 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { MapPin, Search, Filter, ChevronDown, SlidersHorizontal, X, ArrowUpDown, Check, Star, ShoppingCart, Headset } from 'lucide-react';
 import { DONATION_PRODUCTS } from '../constants';
 import { ProductCard } from '../components/ProductCard';
 import { useCart } from '../store/CartContext';
 import { useProducts } from '../store/ProductContext';
 import { Product } from '../types';
-import { LocationPicker } from '../components/LocationPicker';
 
 type SortOption = 'popular' | 'price_asc' | 'price_desc';
 type PHLevel = 'all' | 'acidic' | 'neutral' | 'alkaline';
@@ -15,17 +14,27 @@ interface HomeProps {
   onGoToProfile: () => void;
   onGoToSupport: () => void;
   onProductClick: (product: Product) => void;
+  globalAddress: string | null;
+  onOpenLocationPicker: () => void;
 }
 
-export const Home: React.FC<HomeProps> = ({ onGoToCart, onGoToProfile, onGoToSupport, onProductClick }) => {
+export const Home: React.FC<HomeProps> = ({ onGoToCart, onGoToProfile, onGoToSupport, onProductClick, globalAddress, onOpenLocationPicker }) => {
   const { items } = useCart();
   const { products: MOCK_PRODUCTS, loading, error: productError } = useProducts();
   const cartCount = items.reduce((acc, item) => acc + item.quantity, 0);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [isLocationPickerOpen, setIsLocationPickerOpen] = useState(false);
-  const [currentLocation, setCurrentLocation] = useState('الرياض، حي العليا');
+
+  const currentLocation = useMemo(() => {
+    if (!globalAddress) return 'حدد موقعك';
+    try {
+      const parsed = JSON.parse(globalAddress);
+      return parsed.address || 'موقعي';
+    } catch {
+      return globalAddress;
+    }
+  }, [globalAddress]);
 
   // Filter States
   const [activeQuickFilter, setActiveQuickFilter] = useState<string>('all');
@@ -114,34 +123,21 @@ export const Home: React.FC<HomeProps> = ({ onGoToCart, onGoToProfile, onGoToSup
     setActiveQuickFilter('all');
   };
 
-  const handleLocationConfirm = (loc: string) => {
-      setCurrentLocation(loc);
-      setIsLocationPickerOpen(false);
-  };
-
   return (
     <div className={`pb-24 min-h-screen relative ${isFilterOpen ? 'overflow-hidden h-screen' : ''}`}>
-      {/* Location Picker Modal */}
-      <LocationPicker 
-        isOpen={isLocationPickerOpen} 
-        onClose={() => setIsLocationPickerOpen(false)}
-        onConfirm={handleLocationConfirm}
-        initialLocation={currentLocation}
-      />
-
       {/* Header Section */}
       <div className="bg-primary pt-12 pb-8 px-4 rounded-b-[2rem] shadow-xl relative z-10">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-2 text-white">
             <button 
-                onClick={() => setIsLocationPickerOpen(true)}
+                onClick={onOpenLocationPicker}
                 className="bg-white/20 p-2 rounded-full active:bg-white/30 transition-colors"
             >
                 <MapPin size={20} className="text-white" />
             </button>
             <div 
                 className="flex flex-col cursor-pointer" 
-                onClick={() => setIsLocationPickerOpen(true)}
+                onClick={onOpenLocationPicker}
             >
                 <span className="text-xs text-blue-100">التوصيل إلى</span>
                 <div className="flex items-center gap-1 font-bold">
