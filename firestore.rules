@@ -60,11 +60,12 @@ service cloud.firestore {
     }
 
     // ── App Config ─────────────────────────────────────────────────────────
-    // /config/shipping holds delivery fee params. Readable by authenticated
-    // users; never writable from the client (Admin SDK / n8n sets it).
+    // /config/shipping holds delivery fee params + warehouse coords. Public
+    // read so the service-area gate works for visitors before login; never
+    // writable from the client (Admin SDK / n8n sets it).
 
     match /config/{docId} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow write: if false;
     }
 

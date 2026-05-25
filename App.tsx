@@ -64,10 +64,10 @@ const AppContent: React.FC = () => {
   }, [authLoading, productsLoading]);
 
   useEffect(() => {
-    if (!showSplash && !globalAddress && !isHiddenRoute && user) {
+    if (!showSplash && !globalAddress && !isHiddenRoute) {
       setIsGlobalLocationPickerOpen(true);
     }
-  }, [showSplash, globalAddress, isHiddenRoute, user]);
+  }, [showSplash, globalAddress, isHiddenRoute]);
 
   const handleGlobalLocationConfirm = async (loc: string) => {
     setGlobalAddress(loc);
