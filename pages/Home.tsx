@@ -30,7 +30,24 @@ export const Home: React.FC<HomeProps> = ({ onGoToCart, onGoToProfile, onGoToSup
     if (!globalAddress) return 'حدد موقعك';
     try {
       const parsed = JSON.parse(globalAddress);
-      return parsed.address || 'موقعي';
+      const raw: string = parsed.address || '';
+      if (!raw) return 'موقعي';
+      // Strip Plus Codes (e.g. "CVF2+38M"), postal codes (digits only),
+      // and country name, then show at most 2 parts.
+      const clean = raw
+        .split('،')
+        .map(s => s.trim())
+        .filter(s =>
+          s &&
+          !/\+/.test(s) &&          // Plus Code
+          !/^\d+$/.test(s) &&       // Postal code
+          s !== 'السعودية' &&
+          s !== 'المملكة العربية السعودية' &&
+          s !== 'Saudi Arabia'
+        )
+        .slice(0, 2)
+        .join('، ');
+      return clean || raw;
     } catch {
       return globalAddress;
     }
@@ -141,7 +158,7 @@ export const Home: React.FC<HomeProps> = ({ onGoToCart, onGoToProfile, onGoToSup
             >
                 <span className="text-xs text-blue-100">التوصيل إلى</span>
                 <div className="flex items-center gap-1 font-bold">
-                    <span>{currentLocation}</span>
+                    <span className="truncate max-w-[150px]">{currentLocation}</span>
                     <ChevronDown size={14} />
                 </div>
             </div>
