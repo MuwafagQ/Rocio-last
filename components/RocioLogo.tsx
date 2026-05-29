@@ -58,7 +58,7 @@ const RocioLogo: React.FC<RocioLogoProps> = ({
   const wordmark = (
     <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1, direction: 'ltr' }}>
       {/* "Roc" + spark-dotted ı + "o" = Rocío — no double i */}
-      <div style={{ display: 'inline-flex', alignItems: 'baseline' }}>
+      <div style={{ display: 'inline-flex', alignItems: 'baseline', direction: 'ltr' }}>
         <span style={letterStyle}>Roc</span>
 
         <span style={{ position: 'relative', display: 'inline-block', lineHeight: 1 }}>
