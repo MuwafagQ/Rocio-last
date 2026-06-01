@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { MapPin, Search, ChevronDown, SlidersHorizontal, X, ArrowUpDown, ShoppingCart, Headset, Layers } from 'lucide-react';
+import { MapPin, Search, ChevronDown, SlidersHorizontal, X, ArrowUpDown, ShoppingCart, Headset, Layers, Filter, Check } from 'lucide-react';
 import { ProductCard } from '../components/ProductCard';
 import { useCart } from '../store/CartContext';
 import { useProducts } from '../store/ProductContext';
