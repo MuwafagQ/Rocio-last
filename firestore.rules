@@ -44,7 +44,12 @@ service cloud.firestore {
     // All status updates come from n8n via Admin SDK (bypasses rules).
 
     match /orders/{orderId} {
-      allow read: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin());
+      // n8n may write the user reference as 'userId' or 'firebase_uid' depending on workflow version
+      allow read: if isAuthenticated() && (
+        isOwner(resource.data.userId) ||
+        isOwner(resource.data.firebase_uid) ||
+        isAdmin()
+      );
 
       allow create: if isAuthenticated() &&
         isOwner(request.resource.data.userId) &&
@@ -60,11 +65,22 @@ service cloud.firestore {
     }
 
     // ── App Config ─────────────────────────────────────────────────────────
-    // /config/shipping holds delivery fee params. Readable by authenticated
-    // users; never writable from the client (Admin SDK / n8n sets it).
+    // /config/shipping — public read (service-area check runs before login).
+    // /config/features — auth required (avoids leaking roadmap to unauthenticated crawlers).
+    // All config docs are write-protected; Admin SDK / n8n sets them.
+
+    match /config/shipping {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /config/features {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
 
     match /config/{docId} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow write: if false;
     }
 

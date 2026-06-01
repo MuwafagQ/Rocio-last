@@ -1,7 +1,14 @@
 {
   "rules": {
     "order_status": {
+      ".read": "auth != null",
+      ".indexOn": ["customer_id"],
       "$order_id": {
+        ".write": false
+      }
+    },
+    "user_orders": {
+      "$phone": {
         ".read": "auth != null",
         ".write": false
       }

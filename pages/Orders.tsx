@@ -1,89 +1,161 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../store/AuthContext';
-import { OrderTracking } from './Checkout';
-import { Package, RefreshCw } from 'lucide-react';
-import { getDataConnect, queryRef, executeQuery } from 'firebase/data-connect';
-import { connectorConfig } from '@firebasegen/rocio-mobile-sdk-connector';
+import { Package, RefreshCw, ChevronDown, ChevronUp, MapPin, Truck, Star } from 'lucide-react';
+import { FeedbackSheet } from '../components/FeedbackSheet';
+import { ref, query as rtdbQuery, orderByChild, equalTo, get } from 'firebase/database';
+import { rtdb } from '../firebase';
+import { toCustomerStatus, customerStatusLabel } from '../utils/orderStatus';
 
-interface PastOrder {
+interface MergedOrder {
   id: string;
-  status: string;
-  totalAmount: number;
-  deliveryAddress?: string | null;
-  createdAt: string;
-  odooOrderId?: number | null;
-  orderItems_on_order: Array<{
-    quantity: number;
-    priceAtPurchase?: number | null;
-    sku: {
-      size: string;
-      uom: string;
-      product: {
-        nameAr: string;
-        imageUrl?: string | null;
-      };
-    };
-  }>;
+  // From user_orders/{phone}/{id} — immutable snapshot written by n8n WF#1
+  total_amount?: number;
+  delivery_address?: string;
+  odoo_order_id?: number;
+  created_at?: number;
+  // From order_status/{id} — live status written/updated by n8n WF#3
+  status?: string;
+  driver_name?: string;
+  driver_phone?: string;
+  delivery_id?: string;
+  last_updated_at?: number | string;
 }
 
-const PAGE_SIZE = 10;
+// Strip Saudi country code so "+966552311245" → "552311245"
+function toCustomerId(phone: string | undefined | null): string {
+  if (!phone) return '';
+  return phone.replace(/^\+966/, '').replace(/^0/, '');
+}
 
-const statusLabel = (s: string) => {
-  switch (s) {
-    case 'pending':   return { label: 'قيد المعالجة',       color: 'bg-yellow-100 text-yellow-700' };
-    case 'assigned':  return { label: 'السائق في الطريق',   color: 'bg-blue-100 text-blue-700' };
-    case 'delivered': return { label: 'مكتمل',              color: 'bg-green-100 text-green-700' };
-    case 'cancelled': return { label: 'ملغي',               color: 'bg-red-100 text-red-700' };
-    default:          return { label: s,                    color: 'bg-gray-100 text-gray-600' };
-  }
-};
+function toMs(ts: number | string | undefined | null): number {
+  if (!ts) return 0;
+  return typeof ts === 'string' ? new Date(ts).getTime() : ts < 1e12 ? ts * 1000 : ts;
+}
 
-const formatDate = (iso: string) => {
+function formatTs(ts: number | string | undefined): string {
+  if (!ts) return '';
   try {
-    return new Intl.DateTimeFormat('ar-SA', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(iso));
-  } catch { return iso; }
-};
+    return new Intl.DateTimeFormat('ar-SA', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(toMs(ts)));
+  } catch { return ''; }
+}
+
+function getDisplayAddress(raw: string | undefined | null): string {
+  if (!raw) return '';
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed.label || parsed.address || raw;
+  } catch { return raw; }
+}
 
 export const Orders: React.FC = () => {
   const { user } = useAuth();
-  const [activeOrderId] = useState<string | null>(() => localStorage.getItem('activeOrderId'));
-  const [pastOrders, setPastOrders] = useState<PastOrder[]>([]);
-  const [loadingPast, setLoadingPast] = useState(true);
-  const [offset, setOffset] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
-  const [errorPast, setErrorPast] = useState<string | null>(null);
+  const [orders, setOrders] = useState<MergedOrder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [isPTR, setIsPTR] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [feedbackOrderId, setFeedbackOrderId] = useState<string | null>(null);
+  const [reviewedOrders, setReviewedOrders] = useState<Set<string>>(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('reviewed_orders_v1') || '[]');
+      return new Set(stored as string[]);
+    } catch { return new Set(); }
+  });
   const touchStartY = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const fetchOrders = async (newOffset: number, replace: boolean) => {
-    if (!user?.id) { setLoadingPast(false); return; }
-    setLoadingPast(true);
-    try {
-      const dc = getDataConnect(connectorConfig);
-      const ref = queryRef(dc, 'GetUserOrdersPaginated', { userId: user.id, limit: PAGE_SIZE, offset: newOffset });
-      const { data } = await executeQuery(ref as any);
-      const orders: PastOrder[] = (data as any)?.orders ?? [];
-      setPastOrders(prev => replace ? orders : [...prev, ...orders]);
-      setHasMore(orders.length === PAGE_SIZE);
-    } catch {
-      setErrorPast('تعذّر تحميل سجل الطلبات');
-    } finally {
-      setLoadingPast(false);
-    }
-  };
-
   useEffect(() => {
-    fetchOrders(0, true);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id, refreshKey]);
+    if (!user?.phone && !user?.id) { setLoading(false); return; }
+    setLoading(true);
+    setError(null);
 
-  const handleLoadMore = () => {
-    const nextOffset = offset + PAGE_SIZE;
-    setOffset(nextOffset);
-    fetchOrders(nextOffset, false);
-  };
+    const customerId = toCustomerId(user.phone);
+
+    const fetchOrders = async () => {
+      try {
+        // Primary source: user_orders/{phone} — immutable snapshots from n8n WF#1
+        // Wrapped individually so a permission error here doesn't kill the fallback query
+        const historySnap = await get(ref(rtdb, `user_orders/${customerId}`)).catch(() => null);
+
+        // Fallback source: order_status indexed by customer_id
+        const statusQuery = rtdbQuery(
+          ref(rtdb, 'order_status'),
+          orderByChild('customer_id'),
+          equalTo(customerId)
+        );
+        const statusSnap = await get(statusQuery);
+
+        // Build a map of all live statuses keyed by order id
+        const liveStatus: Record<string, any> = {};
+        if (statusSnap.exists()) {
+          statusSnap.forEach(child => { liveStatus[child.key as string] = child.val(); });
+        }
+
+        const merged: Record<string, MergedOrder> = {};
+
+        // 1. Seed from live status (fallback — covers pre-migration orders)
+        Object.entries(liveStatus).forEach(([id, live]) => {
+          merged[id] = {
+            id,
+            status: live.status,
+            driver_name: live.driver_name,
+            driver_phone: live.driver_phone,
+            delivery_id: live.delivery_id,
+            last_updated_at: live.last_updated_at,
+            // WF#3 may have overwritten these fields; they may be missing
+            total_amount: live.total_amount,
+            delivery_address: live.delivery_address,
+            odoo_order_id: live.odoo_order_id,
+          };
+        });
+
+        // 2. Overlay with immutable snapshots (richer data — overrides WF#3 clobber)
+        if (historySnap?.exists()) {
+          historySnap.forEach(child => {
+            const snap = child.val();
+            const id = child.key as string;
+            merged[id] = {
+              ...merged[id],   // keep live status fields if already present
+              id,
+              total_amount: snap.total_amount,
+              delivery_address: snap.delivery_address,
+              odoo_order_id: snap.odoo_order_id,
+              created_at: snap.created_at,
+              // keep live status from liveStatus map if available
+              status: liveStatus[id]?.status ?? snap.status,
+              driver_name: liveStatus[id]?.driver_name,
+              driver_phone: liveStatus[id]?.driver_phone,
+              delivery_id: liveStatus[id]?.delivery_id,
+              last_updated_at: liveStatus[id]?.last_updated_at,
+            };
+          });
+        }
+
+        const result = Object.values(merged);
+
+        if (result.length === 0) {
+          console.log('[Orders] no orders for', customerId);
+          setOrders([]);
+          setLoading(false);
+          return;
+        }
+
+        // Sort newest first — prefer created_at (immutable), fall back to last_updated_at
+        result.sort((a, b) => toMs(b.created_at || b.last_updated_at) - toMs(a.created_at || a.last_updated_at));
+
+        console.log('[Orders] found', result.length, 'orders for', customerId);
+        setOrders(result);
+      } catch (err) {
+        console.error('[Orders] fetch failed:', err);
+        setError('تعذّر تحميل سجل الطلبات');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchOrders();
+  }, [user?.phone, user?.id, refreshKey]);
 
   const handleTouchStart = (e: React.TouchEvent) => { touchStartY.current = e.touches[0].clientY; };
   const handleTouchEnd = (e: React.TouchEvent) => {
@@ -92,7 +164,6 @@ export const Orders: React.FC = () => {
     if (dy > 70 && atTop) {
       setIsPTR(true);
       setRefreshKey(k => k + 1);
-      setOffset(0);
       setTimeout(() => setIsPTR(false), 1200);
     }
   };
@@ -108,7 +179,7 @@ export const Orders: React.FC = () => {
         <h1 className="text-xl font-bold text-gray-800">طلباتي</h1>
       </div>
 
-      <div className="px-4 pt-4 space-y-4">
+      <div className="px-4 pt-4 space-y-3">
         {isPTR && (
           <div className="flex items-center justify-center gap-2 py-2 text-primary text-sm">
             <RefreshCw size={16} className="animate-spin" />
@@ -116,88 +187,120 @@ export const Orders: React.FC = () => {
           </div>
         )}
 
-        {/* Active order */}
-        {activeOrderId && (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="px-4 pt-3 pb-2 border-b border-gray-100">
-              <p className="text-xs font-bold text-primary uppercase tracking-wide">الطلب الحالي</p>
-            </div>
-            <OrderTracking orderId={activeOrderId} onDone={() => {}} isCard />
-          </div>
+        {error && (
+          <div className="text-center py-6 text-red-500 text-sm">{error}</div>
         )}
 
-        <h2 className="text-sm font-bold text-gray-500 px-1 pt-2">سجل الطلبات</h2>
-
-        {errorPast && (
-          <div className="text-center py-6 text-red-500 text-sm">{errorPast}</div>
-        )}
-
-        {!loadingPast && !errorPast && pastOrders.length === 0 && (
-          <div className="text-center py-12 text-gray-400">
+        {!loading && !error && orders.length === 0 && (
+          <div className="text-center py-16 text-gray-400">
             <Package size={48} className="mx-auto mb-4 opacity-40" />
-            <p className="font-medium text-gray-600 mb-1">لا توجد طلبات سابقة</p>
+            <p className="font-medium text-gray-600 mb-1">لا توجد طلبات</p>
             <p className="text-sm">ستظهر هنا طلباتك بعد إتمام أول طلب</p>
           </div>
         )}
 
-        {pastOrders.map(order => {
-          const { label, color } = statusLabel(order.status);
-          const firstItem = order.orderItems_on_order[0];
+        {orders.map(order => {
+          const cs = toCustomerStatus(order.status ?? '');
+          const isExpanded = expandedId === order.id;
+          const isDelivered = cs === 'delivered';
+          const displayId = order.odoo_order_id
+            ? `#${order.odoo_order_id}`
+            : order.delivery_id
+            ? order.delivery_id
+            : `#${order.id.slice(-6).toUpperCase()}`;
+          const dateTs = order.created_at || order.last_updated_at;
+
           return (
-            <div key={order.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <p className="text-xs text-gray-400">{formatDate(order.createdAt)}</p>
-                  {order.odooOrderId && <p className="text-[10px] text-gray-400 font-mono">#{order.odooOrderId}</p>}
+            <div key={order.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+              <div className="p-4">
+                <div className="flex items-center gap-2 mb-3 flex-wrap">
+                  <span className="bg-gray-100 text-gray-700 font-mono text-xs font-bold px-3 py-1.5 rounded-full tracking-wide">
+                    {displayId}
+                  </span>
+                  <span className={`text-xs font-bold px-3 py-1.5 rounded-full border ${
+                    isDelivered
+                      ? 'bg-green-50 border-green-200 text-green-700'
+                      : 'bg-blue-50 border-blue-200 text-blue-700'
+                  }`}>
+                    {isDelivered ? '✓ ' : '⏳ '}{customerStatusLabel(cs)}
+                  </span>
                 </div>
-                <span className={`text-[10px] px-2 py-1 rounded-full font-bold ${color}`}>{label}</span>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-400">{formatTs(dateTs)}</span>
+                  {order.total_amount != null && (
+                    <span className="font-bold text-primary text-sm">{Number(order.total_amount).toFixed(2)} ر.س</span>
+                  )}
+                </div>
               </div>
-              {firstItem && (
-                <div className="flex items-center gap-3 mb-3">
-                  {firstItem.sku.product.imageUrl ? (
-                    <img
-                      src={firstItem.sku.product.imageUrl}
-                      alt={firstItem.sku.product.nameAr}
-                      className="w-12 h-12 rounded-lg object-contain bg-gray-50 p-1"
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <div className="w-12 h-12 rounded-lg bg-gray-100 flex items-center justify-center">
-                      <Package size={20} className="text-gray-400" />
+
+              <button
+                onClick={() => setExpandedId(prev => prev === order.id ? null : order.id)}
+                className="w-full border-t border-gray-100 px-4 py-3 flex items-center justify-center gap-2 text-primary text-sm font-medium active:bg-gray-50 transition-colors"
+              >
+                {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                {isExpanded ? 'إخفاء التفاصيل' : 'تفاصيل الطلب'}
+              </button>
+
+              {isExpanded && (
+                <div className="border-t border-gray-100 bg-gray-50 p-4 space-y-3 text-sm">
+                  {order.delivery_address && (
+                    <div className="flex items-start gap-2 text-gray-600">
+                      <MapPin size={15} className="mt-0.5 shrink-0 text-gray-400" />
+                      <span className="leading-relaxed text-xs">{getDisplayAddress(order.delivery_address)}</span>
                     </div>
                   )}
-                  <div className="flex-1 min-w-0">
-                    <p className="font-bold text-gray-800 text-sm truncate">{firstItem.sku.product.nameAr}</p>
-                    <p className="text-xs text-gray-400">{firstItem.sku.size} × {firstItem.quantity}</p>
-                    {order.orderItems_on_order.length > 1 && (
-                      <p className="text-[10px] text-gray-400">+{order.orderItems_on_order.length - 1} منتجات أخرى</p>
-                    )}
-                  </div>
+                  {order.driver_name && (
+                    <div className="flex items-center gap-2 text-gray-600">
+                      <Truck size={15} className="shrink-0 text-gray-400" />
+                      <span className="text-xs">{order.driver_name}</span>
+                      {order.driver_phone && (
+                        <span className="text-xs text-gray-400" dir="ltr">· {order.driver_phone}</span>
+                      )}
+                    </div>
+                  )}
+                  {!order.delivery_address && !order.driver_name && (
+                    <p className="text-xs text-gray-400 text-center py-1">لا تتوفر تفاصيل إضافية</p>
+                  )}
+                  {isDelivered && !reviewedOrders.has(order.id) && (
+                    <button
+                      onClick={() => setFeedbackOrderId(order.id)}
+                      className="w-full mt-1 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 font-bold text-xs flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+                    >
+                      <Star size={14} className="fill-amber-400 text-amber-400" />
+                      قيّم طلبك
+                    </button>
+                  )}
+                  {isDelivered && reviewedOrders.has(order.id) && (
+                    <p className="text-center text-xs text-green-600 font-medium py-1">✓ شكراً على تقييمك</p>
+                  )}
                 </div>
               )}
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-primary">{Number(order.totalAmount).toFixed(2)} ر.س</span>
-              </div>
             </div>
           );
         })}
 
-        {loadingPast && (
-          <div className="text-center py-8 text-gray-400">
+        {loading && (
+          <div className="text-center py-10 text-gray-400">
             <RefreshCw size={28} className="mx-auto mb-3 animate-spin" />
           </div>
         )}
-
-        {!loadingPast && hasMore && pastOrders.length > 0 && (
-          <button
-            onClick={handleLoadMore}
-            className="w-full py-3 rounded-xl border border-gray-200 text-gray-600 font-medium text-sm flex items-center justify-center gap-2 active:bg-gray-50"
-          >
-            <RefreshCw size={16} />
-            تحميل المزيد
-          </button>
-        )}
       </div>
+
+      <FeedbackSheet
+        isOpen={!!feedbackOrderId}
+        onClose={() => setFeedbackOrderId(null)}
+        orderId={feedbackOrderId ?? ''}
+        odooOrderId={orders.find(o => o.id === feedbackOrderId)?.odoo_order_id}
+        customerId={toCustomerId(user?.phone)}
+        customerName={(user as any)?.name}
+        onSubmitted={() => {
+          if (feedbackOrderId) {
+            setReviewedOrders(prev => new Set([...prev, feedbackOrderId]));
+          }
+          setFeedbackOrderId(null);
+        }}
+      />
     </div>
   );
 };

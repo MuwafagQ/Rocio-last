@@ -3,7 +3,7 @@ import { User } from '../types';
 import { auth, db } from '../firebase';
 import {
   signInWithEmailAndPassword,
-  signInAnonymously,
+  signInWithCustomToken,
   onAuthStateChanged,
   signOut,
   User as FirebaseUser
@@ -13,26 +13,34 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  registerAnonymous: (name: string, phone: string) => Promise<void>;
+  sendOtp: (phone: string, name: string) => Promise<void>;
+  verifyOtp: (phone: string, code: string) => Promise<void>;
   loginWithEmail: (email: string, pass: string) => Promise<void>;
   logout: () => void;
   error: string | null;
-  // TODO: Re-enable when Meta approves rocio_otp template + Cloud Function token minting replaces n8n custom-token flow
-  // sendOtp: (phone: string, name: string) => Promise<void>;
-  // verifyOtp: (phone: string, code: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const N8N = 'https://n8n.srv1473225.hstgr.cloud/webhook';
+
+// Normalize to E.164 without '+': 05XXXXXXXX or 5XXXXXXXX → 9665XXXXXXXX
+const toE164 = (raw: string) => {
+  const digits = raw.replace(/\D/g, '');
+  if (digits.startsWith('966')) return digits;
+  if (digits.startsWith('0'))   return '966' + digits.slice(1);
+  return '966' + digits;
+};
+
 const callRegisterWebhook = async (uid: string, email: string, phone: string, name: string) => {
   try {
-    await fetch('https://n8n.srv1473225.hstgr.cloud/webhook/register-user', {
+    await fetch(`${N8N}/register-user`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ firebase_uid: uid, email, phone, name })
     });
   } catch {
-    // Non-fatal: user exists in Firebase, Odoo sync will catch up
+    // Non-fatal: Odoo sync will catch up
   }
 };
 
@@ -59,7 +67,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     let phone = firebaseUser.phoneNumber || '';
     let name = firebaseUser.displayName || '';
 
-    // Extract phone for custom-token phone users (uid = phone_05XXXXXXXX)
     if (!phone && firebaseUser.uid.startsWith('phone_')) {
       phone = firebaseUser.uid.replace('phone_', '');
     }
@@ -74,7 +81,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (data.phone) phone = data.phone;
         if (data.name) name = data.name;
       }
-      // Phone-auth users: n8n verify-otp creates the user doc before returning the token
     } catch (err) {
       console.error('Error fetching user profile:', err);
     }
@@ -92,43 +98,47 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     });
   };
 
-  const registerAnonymous = async (name: string, phone: string) => {
+  const sendOtp = async (phone: string, name: string) => {
     setIsLoading(true);
     setError(null);
     try {
-      const cred = await signInAnonymously(auth);
-      const uid = cred.user.uid;
-
-      // Fields match the Firestore create rule: hasOnly([uid, name, email, phone, avatarUrl, default_address])
-      await setDoc(doc(db, 'users', uid), { uid, name, phone, email: '' }, { merge: true });
-
-      // Set state immediately so the UI doesn't flash "عميل المتجر"
-      setUser({
-        id: uid,
-        name,
-        email: '',
-        phone,
-        avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`,
-        role: 'user',
-        tier: 'standard',
+      const res = await fetch(`${N8N}/send-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: toE164(phone), name }),
       });
-
-      // Non-fatal: sync to Odoo + DataConnect via n8n
-      callRegisterWebhook(uid, '', phone, name);
+      if (!res.ok) throw new Error('send_failed');
     } catch (err: any) {
-      const code = err?.code ?? err?.message ?? 'unknown';
-      console.error('registerAnonymous failed:', code, err);
-      // Show the Firebase error code in dev so we can diagnose (e.g. auth/operation-not-allowed)
-      setError(`حدث خطأ أثناء التسجيل (${code})`);
+      setError('تعذّر إرسال رمز التحقق — تحقق من اتصالك وحاول مجدداً');
       throw err;
     } finally {
       setIsLoading(false);
     }
   };
 
-  // TODO: Re-enable when Meta approves rocio_otp template + Cloud Function token minting replaces n8n custom-token flow
-  // const sendOtp = async (phone: string, name: string) => { ... fetch /webhook/send-otp ... }
-  // const verifyOtp = async (phone: string, code: string) => { ... fetch /webhook/verify-otp, signInWithCustomToken ... }
+  const verifyOtp = async (phone: string, code: string) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${N8N}/verify-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: toE164(phone), code }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.token) {
+        throw new Error(data.message || 'invalid_otp');
+      }
+      await signInWithCustomToken(auth, data.token);
+      // onAuthStateChanged fires → mapFirebaseUserToLocal reads the doc n8n already created
+    } catch (err: any) {
+      const isWrong = err.message?.includes('invalid') || err.message === 'invalid_otp';
+      setError(isWrong ? 'رمز التحقق غير صحيح — حاول مجدداً' : 'حدث خطأ — حاول مجدداً');
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const loginWithEmail = async (email: string, pass: string) => {
     setIsLoading(true);
@@ -158,7 +168,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, registerAnonymous, loginWithEmail, logout, error }}>
+    <AuthContext.Provider value={{ user, isLoading, sendOtp, verifyOtp, loginWithEmail, logout, error }}>
       {children}
     </AuthContext.Provider>
   );

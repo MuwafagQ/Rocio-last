@@ -1,5 +1,5 @@
 import React from 'react';
-import { Home, User as UserIcon, RefreshCw, Layers, HandHeart, ClipboardList } from 'lucide-react';
+import { Home, User as UserIcon, ShoppingCart, ClipboardList, Layers } from 'lucide-react';
 import { Tab } from '../types';
 
 interface BottomNavProps {
@@ -11,8 +11,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ currentTab, onTabChange })
   const tabs = [
     { id: Tab.HOME, icon: Home, label: 'الرئيسية' },
     { id: Tab.BRANDS, icon: Layers, label: 'الماركات' },
-    { id: Tab.COMMUNITY, icon: HandHeart, label: 'المجتمع' },
-    { id: Tab.SUBSCRIPTIONS, icon: RefreshCw, label: 'الاشتراكات' },
+    { id: Tab.CART, icon: ShoppingCart, label: 'السلة' },
     { id: Tab.ORDERS, icon: ClipboardList, label: 'طلباتي' },
     { id: Tab.PROFILE, icon: UserIcon, label: 'حسابي' },
   ];

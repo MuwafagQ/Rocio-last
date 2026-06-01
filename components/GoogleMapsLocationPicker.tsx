@@ -36,6 +36,8 @@ export const GoogleMapsLocationPicker: React.FC<Props> = ({
   const [markerPos, setMarkerPos] = useState(WADI_ALDAWASEER);
   const [address, setAddress] = useState('');
   const [geoLoading, setGeoLoading] = useState(false);
+  // Holds a geo position that is waiting for Maps to finish loading before reverse-geocoding
+  const [pendingGeoPos, setPendingGeoPos] = useState<{ lat: number; lng: number } | null>(null);
   const searchBoxRef = useRef<google.maps.places.SearchBox | null>(null);
   const geocoderRef = useRef<google.maps.Geocoder | null>(null);
 
@@ -68,6 +70,13 @@ export const GoogleMapsLocationPicker: React.FC<Props> = ({
     });
   }, [isLoaded]);
 
+  // When Maps loads AND we have a position waiting (geo fired before Maps was ready), geocode it now
+  useEffect(() => {
+    if (!isLoaded || !pendingGeoPos) return;
+    reverseGeocode(pendingGeoPos);
+    setPendingGeoPos(null);
+  }, [isLoaded, pendingGeoPos, reverseGeocode]);
+
   const requestGeolocation = () => {
     if (!navigator.geolocation) return;
     setGeoLoading(true);
@@ -76,8 +85,10 @@ export const GoogleMapsLocationPicker: React.FC<Props> = ({
         const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         setMarkerPos(p);
         setCenter(p);
-        reverseGeocode(p);
         setGeoLoading(false);
+        // pendingGeoPos triggers the effect above; if Maps is already loaded the effect
+        // fires on the next render, otherwise it waits until isLoaded becomes true
+        setPendingGeoPos(p);
       },
       () => {
         setGeoLoading(false);

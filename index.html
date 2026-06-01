@@ -22,6 +22,17 @@
       tailwind.config = {
         theme: {
           extend: {
+            fontSize: {
+              /* All named sizes scaled ×1.5 from Tailwind defaults */
+              'xs':   ['1.125rem',  { lineHeight: '1.625rem'  }],  /* 12→18px */
+              'sm':   ['1.3125rem', { lineHeight: '1.875rem'  }],  /* 14→21px */
+              'base': ['1.5rem',    { lineHeight: '2rem'      }],  /* 16→24px */
+              'lg':   ['1.6875rem', { lineHeight: '2.25rem'   }],  /* 18→27px */
+              'xl':   ['1.875rem',  { lineHeight: '2.5rem'    }],  /* 20→30px */
+              '2xl':  ['2.25rem',   { lineHeight: '2.75rem'   }],  /* 24→36px */
+              '3xl':  ['2.8125rem', { lineHeight: '3.25rem'   }],  /* 30→45px */
+              '4xl':  ['3.375rem',  { lineHeight: '3.75rem'   }],  /* 36→54px */
+            },
             colors: {
               /* ── Rocío Brand Palette — Desert Dew ── */
               primary:        '#1245C5', /* Rocío Blue  — trust, depth      */
@@ -53,6 +64,13 @@
       }
     </script>
     <style>
+      /* ── Full-screen base ── */
+      html, body, #root {
+        margin: 0; padding: 0;
+        width: 100%; height: 100%;
+        min-height: 100dvh;
+      }
+
       /* ── Scrollbar ── */
       .no-scrollbar::-webkit-scrollbar { display: none; }
       .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -78,8 +96,19 @@
         50%  { opacity: 0.9; }
         100% { opacity: 0.4; }
       }
-      .animate-drop  { animation: dropFall 0.8s ease-out forwards; }
-      .animate-shimmer { animation: shimmer 2.5s ease-in-out infinite; }
+      @keyframes sparkFloat {
+        0%, 100% { transform: translateY(0)    scale(1);    opacity: 1;    }
+        50%      { transform: translateY(-9px) scale(1.06); opacity: 0.82; }
+      }
+      .animate-drop     { animation: dropFall 0.8s ease-out forwards; }
+      .animate-shimmer  { animation: shimmer 2.5s ease-in-out infinite; }
+      .animate-spark    { animation: sparkFloat 1.8s ease-in-out infinite; }
+
+      /* ── Arbitrary px text sizes scaled ×1.5 ── */
+      .text-\[9px\]  { font-size: 13.5px !important; }
+      .text-\[10px\] { font-size: 15px   !important; }
+      .text-\[11px\] { font-size: 16.5px !important; }
+      .text-\[12px\] { font-size: 18px   !important; }
     </style>
     <link rel="stylesheet" href="/index.css">
   </head>
