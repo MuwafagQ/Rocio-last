@@ -56,7 +56,7 @@ const RocioLogo: React.FC<RocioLogoProps> = ({
   };
 
   const wordmark = (
-    <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1, direction: 'ltr' }}>
       {/* "Roc" + spark-dotted ı + "o" = Rocío — no double i */}
       <div style={{ display: 'inline-flex', alignItems: 'baseline' }}>
         <span style={letterStyle}>Roc</span>
@@ -102,7 +102,7 @@ const RocioLogo: React.FC<RocioLogoProps> = ({
   if (variant === 'wordmark') return wordmark;
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: size * 0.29 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: size * 0.29, direction: 'ltr' }}>
       {mark}
       {wordmark}
     </div>

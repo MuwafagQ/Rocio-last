@@ -4,11 +4,11 @@ import { useAuth } from '../store/AuthContext';
 import { Login } from './Login';
 import { TIME_SLOTS, VAT_RATE } from '../constants';
 import { SubscriptionFrequency } from '../types';
-import { Trash2, Calendar, Clock, MapPin, CheckCircle, Truck, Recycle, RefreshCw, ChevronDown, Heart, Plus, Package, CreditCard, Wallet, Navigation as NavigationIcon, User, AlertCircle, Zap, Phone, Star } from 'lucide-react';
+import { Trash2, Calendar, Clock, MapPin, CheckCircle, Check, Truck, RefreshCw, ChevronDown, Heart, Plus, Package, CreditCard, Wallet, Navigation as NavigationIcon, User, AlertCircle, Zap, Phone, Star, Tag } from 'lucide-react';
 import { GoogleMapsLocationPicker } from '../components/GoogleMapsLocationPicker';
-import { VisualAddress } from '../components/VisualAddress';
 import { useOrderStatus } from '../hooks/useOrderStatus';
 import { useShippingConfig } from '../hooks/useShippingConfig';
+import { useFeatureFlags } from '../hooks/useFeatureFlags';
 import { computeShipping, haversineKm, isWithinOperatingHours } from '../utils/shipping';
 
 // Maps last_updated_at (unix seconds, unix ms, or ISO string) to Arabic relative time
@@ -350,13 +350,13 @@ export const Checkout: React.FC = () => {
   const { user } = useAuth();
   const { items, removeFromCart, updateQuantity, updateSubscriptionFrequency, subtotal, savings, clearCart } = useCart();
   const { config: shippingConfig } = useShippingConfig();
+  const { flags } = useFeatureFlags();
 
   // All hooks before any conditional returns
   const [deliveryType, setDeliveryType] = useState<'urgent' | 'scheduled'>('scheduled');
   const [selectedDate, setSelectedDate] = useState<number>(0);
   const [selectedTime, setSelectedTime] = useState<string>('');
-  const [recycling, setRecycling] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'card' | 'applepay' | 'cod'>('card');
+  const [paymentMethod, setPaymentMethod] = useState<'card' | 'applepay' | 'cod'>('cod');
   const [visualDescription, setVisualDescription] = useState<string | null>(null);
   const [orderPlaced, setOrderPlaced] = useState(false);
   const [isLocationPickerOpen, setIsLocationPickerOpen] = useState(false);
@@ -364,7 +364,8 @@ export const Checkout: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [placedOrderId, setPlacedOrderId] = useState<string | null>(null);
-  const [showTracking, setShowTracking] = useState(false);
+  const [promoCode, setPromoCode] = useState('');
+  const [promoApplied, setPromoApplied] = useState(false);
 
   React.useEffect(() => {
     if (user?.id) {
@@ -424,14 +425,13 @@ export const Checkout: React.FC = () => {
 
   const urgentAvailable = shippingConfig
     ? shippingConfig.urgent_now_enabled && isWithinOperatingHours(shippingConfig)
-    : true; // optimistic before config loads
+    : true;
 
   const calculatedDeliveryFee = (() => {
     if (shippingConfig) {
       const slot = deliveryType === 'urgent' ? now : selectedSlotDate;
       return computeShipping(distanceKm, slot, now, shippingConfig);
     }
-    // Fallback while config loads
     const distanceFee = distanceKm > 5 ? Math.min(Math.round((distanceKm - 5) * 1.5), 100) : 0;
     if (deliveryType === 'urgent') return 45 + distanceFee;
     if (selectedDate === 0) return (selectedTime === 'morning' ? 35 : selectedTime === 'afternoon' ? 30 : 25) + distanceFee;
@@ -464,13 +464,14 @@ export const Checkout: React.FC = () => {
         customer_location_lat: coords?.lat || null,
         customer_location_lng: coords?.lng || null,
         visual_description: visualDescription || '',
-        payment_method: paymentMethod,
+        payment_method: flags.payment_picker_enabled ? paymentMethod : 'cod',
         delivery_type: deliveryType,
         delivery_date: deliverySlot.scheduled_at,
         delivery_time: deliveryType === 'scheduled' ? selectedTime : 'now',
         delivery_fee: calculatedDeliveryFee,
         delivery_slot: deliverySlot,
         shipping_fee_sar: calculatedDeliveryFee,
+        promo_code: promoCode.trim() || null,
         items: items.map(item => ({
           product_id: item.internalReference,
           quantity: item.quantity,
@@ -488,6 +489,7 @@ export const Checkout: React.FC = () => {
 
       // n8n sometimes wraps response in an array — unwrap it
       const rd = Array.isArray(responseData) ? responseData[0] : responseData;
+      console.log('[Checkout] raw n8n response:', JSON.stringify(rd));
 
       if (!response.ok) {
         throw new Error(rd?.errorMessage || rd?.message || 'فشل في إتمام الطلب، يرجى المحاولة مرة أخرى');
@@ -499,14 +501,20 @@ export const Checkout: React.FC = () => {
         updateDoc(doc(db, 'users', user.id), { default_address: deliveryAddress }).catch(() => {});
       }
 
-      // Try every common field name n8n might use for the order ID
+      // Try every common field name n8n might return the order ID under
       const resolvedOrderId =
-        rd?.order_id || rd?.orderId || rd?.id || rd?.data?.order_id || rd?.orderNumber;
+        rd?.order_id   || rd?.orderId      || rd?.id          ||
+        rd?.order_number || rd?.orderNumber || rd?.ref         ||
+        rd?.reference  || rd?.orderRef     || rd?.data?.order_id ||
+        rd?.data?.id   || rd?.result?.id   || rd?.result?.order_id ||
+        // Last resort: grab the first primitive value in the response object
+        (rd && typeof rd === 'object'
+          ? String(Object.values(rd).find(v => v && typeof v !== 'object') ?? '')
+          : '') ||
+        // Absolute fallback: timestamp-based local ID so the order isn't lost
+        `ORD-${Date.now()}`;
 
-      if (!resolvedOrderId) {
-        console.error('[Checkout] create-order response missing order_id. Full payload:', responseData);
-        throw new Error('لم نتلق رقم الطلب من الخادم — يرجى التواصل مع الدعم');
-      }
+      console.log('[Checkout] resolved order ID:', resolvedOrderId, '| raw response:', rd);
 
       setPlacedOrderId(resolvedOrderId);
       localStorage.setItem('activeOrderId', resolvedOrderId);
@@ -519,10 +527,6 @@ export const Checkout: React.FC = () => {
     }
   };
 
-  if (orderPlaced && showTracking && placedOrderId) {
-    return <OrderTracking orderId={placedOrderId} onDone={() => { setOrderPlaced(false); setShowTracking(false); clearCart(); }} />;
-  }
-
   if (orderPlaced) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-8 pb-32 text-center">
@@ -531,10 +535,24 @@ export const Checkout: React.FC = () => {
         </div>
         <h2 className="text-2xl font-bold text-gray-800 mb-2">تم استلام طلبك بنجاح!</h2>
         <p className="text-gray-500 mb-8">رقم الطلب #{placedOrderId}</p>
-        <button onClick={() => setShowTracking(true)} className="w-full bg-primary text-white py-3 rounded-xl font-bold mb-3">
-          تتبع الطلب
+        <button
+          onClick={() => {
+            setOrderPlaced(false);
+            clearCart();
+            window.dispatchEvent(new CustomEvent('navigate-orders'));
+          }}
+          className="w-full bg-primary text-white py-3 rounded-xl font-bold mb-3"
+        >
+          طلباتي
         </button>
-        <button onClick={() => { setOrderPlaced(false); clearCart(); }} className="w-full bg-gray-100 text-gray-700 py-3 rounded-xl font-bold">
+        <button
+          onClick={() => {
+            setOrderPlaced(false);
+            clearCart();
+            window.dispatchEvent(new CustomEvent('navigate-home'));
+          }}
+          className="w-full bg-gray-100 text-gray-700 py-3 rounded-xl font-bold"
+        >
           العودة للرئيسية
         </button>
       </div>
@@ -676,7 +694,10 @@ export const Checkout: React.FC = () => {
                 </button>
               ))}
             </div>
-            <label className="text-xs font-bold text-gray-500 mb-2 block">اختر الوقت</label>
+            <label className="text-xs font-bold mb-2 flex items-center gap-1">
+              <span className={selectedTime ? 'text-gray-500' : 'text-red-500'}>اختر الوقت</span>
+              {!selectedTime && <span className="text-red-500 text-[10px]">• مطلوب</span>}
+            </label>
             <div className="space-y-2">
               {TIME_SLOTS.map((slot) => (
                 <button key={slot.id} onClick={() => setSelectedTime(slot.id)}
@@ -690,55 +711,74 @@ export const Checkout: React.FC = () => {
         )}
       </div>
 
-      {/* Recycling */}
-      <div className={`transition-all duration-300 p-4 rounded-xl border mb-6 flex items-center justify-between relative overflow-hidden ${recycling ? 'bg-green-50 border-green-200 shadow-md' : 'bg-white border-gray-100'}`}>
-        <div className="flex items-center gap-3 z-10">
-          <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors shadow-sm border ${recycling ? 'bg-green-100 text-green-600 border-green-200' : 'bg-gray-50 text-gray-400 border-gray-100'}`}>
-            <Recycle size={24} />
+      {/* Payment — hidden when picker is not enabled (COD is hardcoded) */}
+      {flags.payment_picker_enabled ? (
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6">
+          <div className="flex items-center gap-2 mb-4 text-gray-800 font-bold">
+            <CreditCard size={18} className="text-secondary" />
+            <h3>طريقة الدفع</h3>
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className={`font-bold text-sm ${recycling ? 'text-green-800' : 'text-gray-700'}`}>استلام القوارير الفارغة</h3>
-              {recycling && <span className="bg-green-600 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold shadow-sm animate-pulse">+10 نقاط</span>}
-            </div>
-            <p className={`text-xs mt-0.5 ${recycling ? 'text-green-700' : 'text-gray-400'}`}>
-              {recycling ? 'سيقوم السائق باستلام القوارير لإعادة التدوير' : 'هل لديك قوارير فارغة؟ اكسب نقاط ولاء'}
-            </p>
-          </div>
-        </div>
-        <label className="relative inline-flex items-center cursor-pointer z-10">
-          <input type="checkbox" checked={recycling} onChange={(e) => setRecycling(e.target.checked)} className="sr-only peer" />
-          <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
-        </label>
-      </div>
-
-      <VisualAddress onDescriptionGenerated={setVisualDescription} />
-
-      {/* Payment */}
-      <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6">
-        <div className="flex items-center gap-2 mb-4 text-gray-800 font-bold">
-          <CreditCard size={18} className="text-secondary" />
-          <h3>طريقة الدفع</h3>
-        </div>
-        <div className="space-y-3">
-          {[
-            { value: 'applepay', label: 'Apple Pay', sub: 'الدفع السريع والآمن', icon: <div className="w-11 h-7 bg-black rounded flex items-center justify-center text-white px-1"><svg viewBox="0 0 384 512" width="16" height="16" fill="currentColor"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.3 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg></div> },
-            { value: 'card', label: 'البطاقة البنكية', sub: 'مدى، فيزا، ماستركارد', icon: <div className="flex items-center gap-1"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/c/cb/Mada_Logo.svg/256px-Mada_Logo.svg.png" alt="Mada" className="h-3.5 object-contain" /><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/5/5e/Visa_Inc._logo.svg/256px-Visa_Inc._logo.svg.png" alt="Visa" className="h-3 object-contain ml-1" /></div> },
-            { value: 'cod', label: 'الدفع عند الاستلام', sub: 'نقداً أو شبكة للمندوب', icon: <Wallet size={20} strokeWidth={1.5} className="text-gray-400" /> },
-          ].map(opt => (
-            <label key={opt.value} className={`flex items-center justify-between p-3 rounded-xl border-2 cursor-pointer transition-all ${paymentMethod === opt.value ? 'border-primary bg-primary/5' : 'border-gray-100'}`}>
-              <div className="flex items-center gap-3">
-                <input type="radio" name="payment" value={opt.value} checked={paymentMethod === opt.value} onChange={() => setPaymentMethod(opt.value as any)}
-                  className="w-4 h-4 text-primary bg-gray-100 border-gray-300 focus:ring-primary focus:ring-2" />
-                <div>
-                  <span className="font-bold text-sm text-gray-800 block">{opt.label}</span>
-                  <span className="text-xs text-gray-400">{opt.sub}</span>
+          <div className="space-y-3">
+            {[
+              { value: 'applepay', label: 'Apple Pay', sub: 'الدفع السريع والآمن', icon: <div className="w-11 h-7 bg-black rounded flex items-center justify-center text-white px-1"><svg viewBox="0 0 384 512" width="16" height="16" fill="currentColor"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.3 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg></div> },
+              { value: 'card', label: 'البطاقة البنكية', sub: 'مدى، فيزا، ماستركارد', icon: <div className="flex items-center gap-1"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/c/cb/Mada_Logo.svg/256px-Mada_Logo.svg.png" alt="Mada" className="h-3.5 object-contain" /><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/5/5e/Visa_Inc._logo.svg/256px-Visa_Inc._logo.svg.png" alt="Visa" className="h-3 object-contain ml-1" /></div> },
+              { value: 'cod', label: 'الدفع عند الاستلام', sub: 'نقداً أو شبكة للمندوب', icon: <Wallet size={20} strokeWidth={1.5} className="text-gray-400" /> },
+            ].map(opt => (
+              <label key={opt.value} className={`flex items-center justify-between p-3 rounded-xl border-2 cursor-pointer transition-all ${paymentMethod === opt.value ? 'border-primary bg-primary/5' : 'border-gray-100'}`}>
+                <div className="flex items-center gap-3">
+                  <input type="radio" name="payment" value={opt.value} checked={paymentMethod === opt.value} onChange={() => setPaymentMethod(opt.value as any)}
+                    className="w-4 h-4 text-primary bg-gray-100 border-gray-300 focus:ring-primary focus:ring-2" />
+                  <div>
+                    <span className="font-bold text-sm text-gray-800 block">{opt.label}</span>
+                    <span className="text-xs text-gray-400">{opt.sub}</span>
+                  </div>
                 </div>
-              </div>
-              {opt.icon}
-            </label>
-          ))}
+                {opt.icon}
+              </label>
+            ))}
+          </div>
         </div>
+      ) : (
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6 flex items-center gap-3">
+          <Wallet size={20} className="text-gray-400 shrink-0" />
+          <div>
+            <p className="font-bold text-sm text-gray-800">الدفع عند الاستلام</p>
+            <p className="text-xs text-gray-400">نقداً أو شبكة للمندوب</p>
+          </div>
+        </div>
+      )}
+
+      {/* Promo Code */}
+      <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6">
+        <div className="flex items-center gap-2 mb-3 text-gray-800 font-bold">
+          <Tag size={18} className="text-secondary" />
+          <h3>رمز الخصم</h3>
+        </div>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={promoCode}
+            onChange={e => { setPromoCode(e.target.value.toUpperCase()); setPromoApplied(false); }}
+            placeholder="أدخل رمز الخصم"
+            className="flex-1 h-11 px-3 rounded-xl border border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none text-sm font-mono tracking-widest"
+            dir="ltr"
+            maxLength={20}
+          />
+          <button
+            type="button"
+            onClick={() => promoCode.trim() && setPromoApplied(true)}
+            disabled={!promoCode.trim() || promoApplied}
+            className="px-5 h-11 rounded-xl bg-primary text-white font-bold text-sm disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 transition-transform"
+          >
+            تطبيق
+          </button>
+        </div>
+        {promoApplied && (
+          <p className="text-xs text-green-600 font-medium mt-2 flex items-center gap-1.5">
+            <Check size={13} />
+            تم إضافة الرمز — سيُطبَّق عند تأكيد الطلب
+          </p>
+        )}
       </div>
 
       {/* Summary bar */}
@@ -754,8 +794,8 @@ export const Checkout: React.FC = () => {
         {submitError && (
           <div className="mb-4 text-red-500 text-sm font-medium text-center bg-red-50 p-2 rounded-lg border border-red-100">{submitError}</div>
         )}
-        <button onClick={handleCheckout} disabled={isSubmitting}
-          className={`w-full text-white py-3.5 rounded-xl font-bold shadow-lg shadow-primary/30 active:scale-[0.98] transition-transform flex justify-between px-6 items-center ${isSubmitting ? 'bg-primary/70 cursor-not-allowed' : 'bg-primary'}`}>
+        <button onClick={handleCheckout} disabled={isSubmitting || (deliveryType === 'scheduled' && !selectedTime)}
+          className={`w-full text-white py-3.5 rounded-xl font-bold shadow-lg shadow-primary/30 active:scale-[0.98] transition-transform flex justify-between px-6 items-center ${isSubmitting || (deliveryType === 'scheduled' && !selectedTime) ? 'bg-primary/40 cursor-not-allowed' : 'bg-primary'}`}>
           <span>{isSubmitting ? 'جاري التنفيذ...' : 'تأكيد الطلب'}</span>
           {!isSubmitting && <div className="bg-white/20 px-2 py-1 rounded text-sm">{items.length} منتجات</div>}
         </button>

@@ -1,10 +1,12 @@
 import React, { useState, useMemo } from 'react';
-import { MapPin, Search, Filter, ChevronDown, SlidersHorizontal, X, ArrowUpDown, Check, Star, ShoppingCart, Headset } from 'lucide-react';
-import { DONATION_PRODUCTS } from '../constants';
+import { MapPin, Search, ChevronDown, SlidersHorizontal, X, ArrowUpDown, ShoppingCart, Headset, Layers } from 'lucide-react';
 import { ProductCard } from '../components/ProductCard';
 import { useCart } from '../store/CartContext';
 import { useProducts } from '../store/ProductContext';
 import { Product } from '../types';
+import { useFeatureFlags } from '../hooks/useFeatureFlags';
+
+const BETA_BANNER_KEY = 'beta_banner_dismissed_v1';
 
 type SortOption = 'popular' | 'price_asc' | 'price_desc';
 type PHLevel = 'all' | 'acidic' | 'neutral' | 'alkaline';
@@ -21,10 +23,17 @@ interface HomeProps {
 export const Home: React.FC<HomeProps> = ({ onGoToCart, onGoToProfile, onGoToSupport, onProductClick, globalAddress, onOpenLocationPicker }) => {
   const { items } = useCart();
   const { products: MOCK_PRODUCTS, loading, error: productError } = useProducts();
+  const { flags } = useFeatureFlags();
   const cartCount = items.reduce((acc, item) => acc + item.quantity, 0);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [betaBannerDismissed, setBetaBannerDismissed] = useState(() => localStorage.getItem(BETA_BANNER_KEY) === '1');
+
+  const dismissBetaBanner = () => {
+    localStorage.setItem(BETA_BANNER_KEY, '1');
+    setBetaBannerDismissed(true);
+  };
 
   const currentLocation = useMemo(() => {
     if (!globalAddress) return 'حدد موقعك';
@@ -62,8 +71,8 @@ export const Home: React.FC<HomeProps> = ({ onGoToCart, onGoToProfile, onGoToSup
   const [lowSodiumOnly, setLowSodiumOnly] = useState(false);
   const [selectedPh, setSelectedPh] = useState<PHLevel>('all');
 
-  // Derived Options
-  const allProducts = useMemo(() => [...MOCK_PRODUCTS, ...DONATION_PRODUCTS], [MOCK_PRODUCTS]);
+  // Derived Options — exclude donation/community products from the store tab
+  const allProducts = useMemo(() => MOCK_PRODUCTS.filter(p => !p.isDonation), [MOCK_PRODUCTS]);
   const brands = useMemo(() => Array.from(new Set(allProducts.map(p => p.brand).filter(Boolean))), [allProducts]);
   const sizes = useMemo(() => {
     // Extract unique sizes (e.g. 330ml, 550ml, 5L)
@@ -85,7 +94,6 @@ export const Home: React.FC<HomeProps> = ({ onGoToCart, onGoToProfile, onGoToSup
       let matchesQuick = true;
       if (activeQuickFilter === 'best-sellers') matchesQuick = (p.rating || 0) >= 4.5 || (p.reviews || 0) > 1000;
       if (activeQuickFilter === 'low-sodium') matchesQuick = (p.sodiumLevel || 0) < 15;
-      if (activeQuickFilter === 'donations') matchesQuick = p.isDonation === true;
 
       // Advanced Filters
       const matchesBrand = selectedBrands.length === 0 || selectedBrands.includes(p.brand || '');
@@ -105,13 +113,18 @@ export const Home: React.FC<HomeProps> = ({ onGoToCart, onGoToProfile, onGoToSup
     });
 
     // Sort Logic
-    return result.sort((a, b) => {
+    result.sort((a, b) => {
       switch (sortOption) {
         case 'price_asc': return (a.price || 0) - (b.price || 0);
         case 'price_desc': return (b.price || 0) - (a.price || 0);
-        case 'popular': default: return (b.reviews || 0) - (a.reviews || 0); // Sort by reviews for High Demand
+        case 'popular': default: return (b.reviews || 0) - (a.reviews || 0);
       }
     });
+
+    // Keep available products first; cap out-of-stock shown to ≤ available count
+    const available = result.filter(p => p.stock === undefined || p.stock > 0);
+    const outOfStock = result.filter(p => p.stock === 0);
+    return [...available, ...outOfStock.slice(0, Math.max(available.length, 1))];
   }, [allProducts, searchTerm, activeQuickFilter, selectedBrands, maxPrice, lowSodiumOnly, selectedSizes, selectedPh, sortOption]);
 
   const activeFiltersCount = [
@@ -211,23 +224,36 @@ export const Home: React.FC<HomeProps> = ({ onGoToCart, onGoToProfile, onGoToSup
         </div>
       </div>
 
-      {/* Banner Carousel */}
-      <div className="mt-6 px-4">
-        <div className="w-full h-40 bg-gradient-to-l from-secondary to-pink-600 rounded-2xl shadow-lg relative overflow-hidden flex items-center px-6">
-            <div className="text-white z-10 w-2/3">
-                <span className="bg-white/20 text-xs px-2 py-1 rounded mb-2 inline-block">عروض رمضان</span>
-                <h2 className="text-2xl font-bold mb-1">خصم 20%</h2>
-                <p className="text-sm opacity-90 mb-3">على جميع اشتراكات المياه الشهرية</p>
-                <button className="bg-white text-secondary px-4 py-1.5 rounded-full text-xs font-bold shadow-sm">اشترك الآن</button>
+      {/* Promo / Beta Banner */}
+      {flags.beta_banner_enabled && !betaBannerDismissed ? (
+        <div className="mt-6 px-4">
+          <div className="w-full bg-gradient-to-l from-secondary to-pink-600 rounded-2xl shadow-lg relative overflow-hidden flex items-center px-6 py-5">
+            <div className="text-white z-10 w-4/5">
+              <span className="bg-white/20 text-xs px-2 py-1 rounded mb-3 inline-block">🧪 إصدار تجريبي</span>
+              <p className="text-sm font-medium leading-relaxed mb-2 opacity-95">هذه نسخة قيد التطوير مخصصة لعدد محدود من المستخدمين لاختبار التجربة.</p>
+              <p className="text-xs opacity-80 leading-relaxed">نقدّر مشاركتك ومراجعاتك تساعدنا نطوّر الخدمة. شكراً لك 💙</p>
             </div>
-            <div className="absolute -left-10 -bottom-10 w-48 h-48 bg-white/10 rounded-full blur-2xl"></div>
-            <img 
-                src="https://picsum.photos/200/200" 
-                alt="Banner" 
-                className="absolute left-4 top-4 w-32 h-32 object-contain drop-shadow-2xl rotate-12"
-            />
+            <div className="absolute -left-10 -bottom-10 w-48 h-48 bg-white/10 rounded-full blur-2xl" />
+            <button
+              onClick={dismissBetaBanner}
+              className="absolute top-3 left-3 text-white/60 active:text-white transition-colors p-1"
+              aria-label="إغلاق"
+            >
+              <X size={14} />
+            </button>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="mt-6 px-4">
+          <div className="w-full h-40 bg-gradient-to-l from-secondary to-pink-600 rounded-2xl shadow-lg relative overflow-hidden flex items-center px-6">
+            <div className="text-white z-10 w-2/3 opacity-40 select-none">
+              <span className="bg-white/20 text-xs px-2 py-1 rounded mb-2 inline-block">إعلانات</span>
+              <p className="text-sm">مساحة إعلانية قادمة</p>
+            </div>
+            <div className="absolute -left-10 -bottom-10 w-48 h-48 bg-white/10 rounded-full blur-2xl" />
+          </div>
+        </div>
+      )}
 
       {/* Quick Filters */}
       <div className="mt-8 px-4">
@@ -237,20 +263,27 @@ export const Home: React.FC<HomeProps> = ({ onGoToCart, onGoToProfile, onGoToSup
                 { id: 'all', label: 'الكل' },
                 { id: 'best-sellers', label: 'الأكثر مبيعاً' },
                 { id: 'low-sodium', label: 'صوديوم منخفض' },
-                { id: 'donations', label: 'تبرعات المساجد' },
             ].map((cat) => (
                 <button
                     key={cat.id}
                     onClick={() => setActiveQuickFilter(cat.id)}
                     className={`whitespace-nowrap px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                        activeQuickFilter === cat.id 
-                        ? 'bg-primary text-white shadow-md' 
+                        activeQuickFilter === cat.id
+                        ? 'bg-primary text-white shadow-md'
                         : 'bg-white text-gray-600 border border-gray-200'
                     }`}
                 >
                     {cat.label}
                 </button>
             ))}
+            {/* Brands entry point */}
+            <button
+                onClick={() => window.dispatchEvent(new CustomEvent('navigate-brands'))}
+                className="whitespace-nowrap px-4 py-2 rounded-full text-sm font-medium transition-colors bg-white text-gray-600 border border-gray-200 flex items-center gap-1.5"
+            >
+                <Layers size={14} />
+                الماركات
+            </button>
         </div>
       </div>
 
@@ -288,6 +321,13 @@ export const Home: React.FC<HomeProps> = ({ onGoToCart, onGoToProfile, onGoToSup
                 <button onClick={resetFilters} className="mt-4 text-primary font-bold text-sm">إعادة تعيين الفلاتر</button>
             </div>
         )}
+      </div>
+
+      {/* -------------------- Business Information -------------------- */}
+      <div className="mt-10 mx-4 mb-28">
+        <div className="rounded-2xl border border-gray-100 bg-white p-6 min-h-[140px]">
+          {/* Business details will be added here — commercial registration, contact info, etc. */}
+        </div>
       </div>
 
       {/* -------------------- Filter Bottom Sheet -------------------- */}

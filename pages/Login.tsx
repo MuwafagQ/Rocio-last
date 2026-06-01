@@ -12,6 +12,7 @@ export const Login: React.FC<LoginProps> = ({ adminMode = false }) => {
 
   const [phone, setPhone] = useState('');
   const [name, setName] = useState('');
+  const [nameError, setNameError] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
@@ -22,11 +23,17 @@ export const Login: React.FC<LoginProps> = ({ adminMode = false }) => {
   };
 
   const isValidPhone = phone.length === 9 || (phone.length === 10 && phone.startsWith('0'));
-  const isValidName = name.trim().length >= 2;
+  const nameParts = name.trim().split(/\s+/).filter(Boolean);
+  const isValidName = nameParts.length >= 3;
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isValidPhone || !isValidName) return;
+    if (!isValidName) {
+      setNameError('يرجى إدخال الاسم الثلاثي كاملاً (الاسم الأول والأب والعائلة)');
+      return;
+    }
+    if (!isValidPhone) return;
+    setNameError('');
     try {
       await registerAnonymous(name.trim(), phone);
     } catch {
@@ -65,7 +72,7 @@ export const Login: React.FC<LoginProps> = ({ adminMode = false }) => {
       {step === 'register' && (
         <form onSubmit={handleRegister} className="w-full space-y-4">
           <div className="space-y-1">
-            <label className="text-sm font-medium text-gray-700">الاسم الكريم</label>
+            <label className="text-sm font-medium text-gray-700">الاسم الكامل <span className="text-gray-400">(ثلاثي)</span></label>
             <div className="relative">
               <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-gray-400">
                 <UserIcon size={18} />
@@ -73,36 +80,46 @@ export const Login: React.FC<LoginProps> = ({ adminMode = false }) => {
               <input
                 type="text"
                 value={name}
-                onChange={e => setName(e.target.value)}
-                className="w-full h-12 px-4 pr-10 rounded-xl border border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
-                placeholder="محمد عبدالله"
+                onChange={e => { setName(e.target.value); if (nameError) setNameError(''); }}
+                className={`w-full h-12 px-4 pr-10 rounded-xl border focus:ring-2 outline-none transition-all ${
+                  nameError
+                    ? 'border-red-400 focus:border-red-400 focus:ring-red-400/20'
+                    : 'border-gray-200 focus:border-primary focus:ring-primary/20'
+                }`}
+                placeholder="محمد عبدالله الأحمدي"
                 autoFocus
                 required
               />
             </div>
+            {nameError && (
+              <p className="text-xs text-red-500 font-medium pt-0.5">{nameError}</p>
+            )}
           </div>
 
           <div className="space-y-1">
             <label className="text-sm font-medium text-gray-700">رقم الجوال</label>
-            <div className="relative text-left" dir="ltr">
+            <div
+              className="flex h-12 rounded-xl border border-gray-200 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 overflow-hidden transition-all"
+              dir="ltr"
+            >
+              <span className="flex items-center px-3 bg-gray-50 border-r border-gray-200 text-gray-500 font-semibold text-sm select-none whitespace-nowrap">
+                +966
+              </span>
               <input
                 type="tel"
                 value={phone}
                 onChange={handlePhoneChange}
-                className="w-full h-12 px-4 pl-14 rounded-xl border border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all text-lg tracking-widest font-mono"
+                className="flex-1 px-3 outline-none text-base tracking-widest font-mono bg-white"
                 placeholder="05XXXXXXXX"
                 required
               />
-              <div className="absolute left-3 top-3.5 text-gray-500 font-bold border-r pr-2 border-gray-200 select-none bg-white">
-                +966
-              </div>
             </div>
             <p className="text-xs text-gray-400 text-right mt-1">أدخل الرقم بصيغة 05XXXXXXXX أو 5XXXXXXXX</p>
           </div>
 
           <button
             type="submit"
-            disabled={isLoading || !isValidPhone || !isValidName}
+            disabled={isLoading || !isValidPhone}
             className="w-full h-12 bg-primary text-white rounded-xl font-bold text-lg shadow-lg shadow-primary/30 flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-70 disabled:cursor-not-allowed"
           >
             {isLoading ? <Loader2 className="animate-spin" /> : 'متابعة'}

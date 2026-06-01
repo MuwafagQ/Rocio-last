@@ -5,7 +5,6 @@ import { ProductProvider, useProducts } from './store/ProductContext';
 import { Home } from './pages/Home';
 import { Checkout } from './pages/Checkout';
 import { Profile } from './pages/Profile';
-import { Promotions } from './pages/Promotions';
 import { Community } from './pages/Community';
 import { Subscriptions } from './pages/Subscriptions';
 import { Brands } from './pages/Brands';
@@ -17,16 +16,18 @@ import { Support } from './pages/Support';
 import { Orders } from './pages/Orders';
 import { BottomNav } from './components/BottomNav';
 import { Tab, Product, BrandInfo, ShippingConfig } from './types';
-import { Loader2 } from 'lucide-react';
 import { SplashScreen } from './components/SplashScreen';
+import { BrandedLoader } from './components/BrandedLoader';
 import { GoogleMapsLocationPicker } from './components/GoogleMapsLocationPicker';
 import { haversineKm } from './utils/shipping';
 import { useCart } from './store/CartContext';
+import { useFeatureFlags } from './hooks/useFeatureFlags';
 
 const AppContent: React.FC = () => {
   const { isLoading: authLoading, user } = useAuth();
   const { loading: productsLoading } = useProducts();
   const { outsideServiceArea, setOutsideServiceArea } = useCart();
+  const { flags } = useFeatureFlags();
   const [currentTab, setCurrentTab] = useState<Tab>(Tab.HOME);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedBrand, setSelectedBrand] = useState<BrandInfo | null>(null);
@@ -34,6 +35,8 @@ const AppContent: React.FC = () => {
 
   const [showSplash, setShowSplash] = useState(true);
   const [isReady, setIsReady] = useState(false);
+  const [showLoader, setShowLoader] = useState(false);
+  const [loaderIsReady, setLoaderIsReady] = useState(false);
 
   const [isGlobalLocationPickerOpen, setIsGlobalLocationPickerOpen] = useState(false);
   const [globalAddress, setGlobalAddress] = useState<string | null>(null);
@@ -48,11 +51,17 @@ const AppContent: React.FC = () => {
 
     const handleNavigateCart = () => { setSelectedProduct(null); setSelectedBrand(null); setCurrentTab(Tab.CART); };
     const handleNavigateHome = () => { setSelectedProduct(null); setSelectedBrand(null); setCurrentTab(Tab.HOME); };
+    const handleNavigateBrands = () => { setSelectedProduct(null); setSelectedBrand(null); setCurrentTab(Tab.BRANDS); };
+    const handleNavigateOrders = () => { setSelectedProduct(null); setSelectedBrand(null); setCurrentTab(Tab.ORDERS); };
     window.addEventListener('navigate-cart', handleNavigateCart);
     window.addEventListener('navigate-home', handleNavigateHome);
+    window.addEventListener('navigate-brands', handleNavigateBrands);
+    window.addEventListener('navigate-orders', handleNavigateOrders);
     return () => {
       window.removeEventListener('navigate-cart', handleNavigateCart);
       window.removeEventListener('navigate-home', handleNavigateHome);
+      window.removeEventListener('navigate-brands', handleNavigateBrands);
+      window.removeEventListener('navigate-orders', handleNavigateOrders);
     };
   }, []);
 
@@ -62,6 +71,20 @@ const AppContent: React.FC = () => {
       return () => clearTimeout(timer);
     }
   }, [authLoading, productsLoading]);
+
+  // Show branded loader for any auth loading that happens after the splash is gone
+  useEffect(() => {
+    if (!showSplash && authLoading) {
+      setShowLoader(true);
+      setLoaderIsReady(false);
+    }
+  }, [showSplash, authLoading]);
+
+  useEffect(() => {
+    if (showLoader && !authLoading) {
+      setLoaderIsReady(true);
+    }
+  }, [showLoader, authLoading]);
 
   useEffect(() => {
     if (!showSplash && !globalAddress && !isHiddenRoute) {
@@ -100,16 +123,24 @@ const AppContent: React.FC = () => {
 
   const handleGoToCart = () => { setSelectedBrand(null); setSelectedProduct(null); setCurrentTab(Tab.CART); };
 
+  const handleTabChange = (tab: Tab) => {
+    if (tab === Tab.COMMUNITY && !flags.community_enabled) return setCurrentTab(Tab.HOME);
+    if (tab === Tab.SUBSCRIPTIONS && !flags.subscriptions_enabled) return setCurrentTab(Tab.HOME);
+    setCurrentTab(tab);
+  };
+
+  const homeProps = { onGoToCart: () => setCurrentTab(Tab.CART), onGoToProfile: () => setCurrentTab(Tab.PROFILE), onGoToSupport: () => setCurrentTab(Tab.SUPPORT), onProductClick: (p: Product) => setSelectedProduct(p), globalAddress, onOpenLocationPicker: () => setIsGlobalLocationPickerOpen(true) };
+
   const renderContent = () => {
     switch (currentTab) {
       case Tab.HOME:
-        return <Home onGoToCart={() => setCurrentTab(Tab.CART)} onGoToProfile={() => setCurrentTab(Tab.PROFILE)} onGoToSupport={() => setCurrentTab(Tab.SUPPORT)} onProductClick={p => setSelectedProduct(p)} globalAddress={globalAddress} onOpenLocationPicker={() => setIsGlobalLocationPickerOpen(true)} />;
+        return <Home {...homeProps} />;
       case Tab.BRANDS:
-        return <Brands onBrandClick={b => setSelectedBrand(b)} onGoToCart={() => setCurrentTab(Tab.CART)} />;
+        return <Brands onBrandClick={(b: BrandInfo) => setSelectedBrand(b)} onGoToCart={() => setCurrentTab(Tab.CART)} />;
       case Tab.COMMUNITY:
-        return <Community onGoToCart={() => setCurrentTab(Tab.CART)} onProductClick={p => setSelectedProduct(p)} />;
+        return flags.community_enabled ? <Community onGoToCart={() => setCurrentTab(Tab.CART)} onProductClick={(p: Product) => setSelectedProduct(p)} /> : <Home {...homeProps} />;
       case Tab.SUBSCRIPTIONS:
-        return <Subscriptions onGoToCart={() => setCurrentTab(Tab.CART)} onProductClick={p => setSelectedProduct(p)} />;
+        return flags.subscriptions_enabled ? <Subscriptions onGoToCart={() => setCurrentTab(Tab.CART)} onProductClick={(p: Product) => setSelectedProduct(p)} /> : <Home {...homeProps} />;
       case Tab.CART:
         return <Checkout />;
       case Tab.PROFILE:
@@ -119,7 +150,7 @@ const AppContent: React.FC = () => {
       case Tab.ORDERS:
         return <Orders />;
       default:
-        return <Home onGoToCart={() => setCurrentTab(Tab.CART)} onGoToProfile={() => setCurrentTab(Tab.PROFILE)} onGoToSupport={() => setCurrentTab(Tab.SUPPORT)} onProductClick={p => setSelectedProduct(p)} globalAddress={globalAddress} onOpenLocationPicker={() => setIsGlobalLocationPickerOpen(true)} />;
+        return <Home {...homeProps} />;
     }
   };
 
@@ -147,12 +178,16 @@ const AppContent: React.FC = () => {
       );
     }
 
-    if (selectedProduct) {
-      return <ProductDetails product={selectedProduct} onBack={() => setSelectedProduct(null)} onGoToCart={handleGoToCart} />;
-    }
-    if (selectedBrand) {
-      return <BrandDetails brand={selectedBrand} onBack={() => setSelectedBrand(null)} onProductClick={p => setSelectedProduct(p)} onGoToCart={handleGoToCart} />;
-    }
+    const pageContent = selectedProduct ? (
+      <ProductDetails product={selectedProduct} onBack={() => setSelectedProduct(null)} onGoToCart={handleGoToCart} />
+    ) : selectedBrand ? (
+      <BrandDetails brand={selectedBrand} onBack={() => setSelectedBrand(null)} onProductClick={p => setSelectedProduct(p)} onGoToCart={handleGoToCart} />
+    ) : (
+      <>
+        <main className="h-full overflow-y-auto no-scrollbar">{renderContent()}</main>
+        <BottomNav currentTab={currentTab} onTabChange={handleTabChange} />
+      </>
+    );
 
     return (
       <>
@@ -161,16 +196,16 @@ const AppContent: React.FC = () => {
             أنت خارج منطقة الخدمة — يمكنك التصفح فقط
           </div>
         )}
-        <main className="h-full overflow-y-auto no-scrollbar">{renderContent()}</main>
-        <BottomNav currentTab={currentTab} onTabChange={setCurrentTab} />
+        {pageContent}
       </>
     );
   };
 
   return (
-    <div className="max-w-md mx-auto bg-gray-100 min-h-screen relative shadow-2xl overflow-hidden font-sans">
+    <div className="w-full bg-gray-100 min-h-screen relative overflow-hidden font-sans">
       {showSplash && <SplashScreen isReady={isReady} onTransitionEnd={() => setShowSplash(false)} />}
-      {!authLoading && !productsLoading && renderMainContent()}
+      {showLoader && <BrandedLoader isReady={loaderIsReady} onDone={() => setShowLoader(false)} />}
+      {!showSplash && !showLoader && renderMainContent()}
       <GoogleMapsLocationPicker
         isOpen={isGlobalLocationPickerOpen}
         onClose={() => setIsGlobalLocationPickerOpen(false)}
